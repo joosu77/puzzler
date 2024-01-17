@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-num=91
+range_wrap = lambda l, a,b: l[a:b] if a<b else np.concatenate((l[a:],l[:b]))
 im = cv2.imread("input_shuffled.png")
 imgray = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
 ret, thresh = cv2.threshold(imgray, 35, 255, 0)
@@ -32,15 +32,103 @@ for ci1 in range(len(contours)):
             if overlap:
                 to_remove.add(ci1 if contours[ci1][0] < contours[ci2][0] else ci2)
 contours = [c[1] for i,c in enumerate(contours) if i not in to_remove]
+contour_sets = [set(tuple(cc[0]) for cc in c) for c in contours]
 print(len(contours))
-img = im.copy()
-cv2.drawContours(img, contours, -1, (0,255,0), 2)
-for c in contours:
-    imc = im.copy()
-    cv2.drawContours(imc, c, -1, (0,255,0), 2)
-    cv2.imshow("1",imc)
-    cv2.imshow("2",img)
+#finding corners
+corners = []
+corners_coord = []
+starting_piece_id = -1
+edge_pieces_right = []
+for cii,c in enumerate(contours):
+    box = cv2.boundingRect(c)
+    rect_corns = [(box[0],box[1]),(box[0]+box[2], box[1]), (box[0]+box[2],box[1]+box[3]), (box[0],box[1]+box[3])]
+    corns = [-1,-1,-1,-1]
+    corns_d = [1e9,1e9,1e9,1e9]
+    corns_id = [-1,-1,-1,-1]
+    for i, pix in enumerate(c):
+        for ci in range(4):
+            d = abs(rect_corns[ci][0]-pix[0][0])+abs(rect_corns[ci][1]-pix[0][1])
+            if d<corns_d[ci]:
+                corns_d[ci] = d
+                corns[ci] = pix[0]
+                corns_id[ci] = i
+    corners.append(corns_id)
+    corners_coord.append(corns)
+    for corn in corns:
+        cv2.circle(im, corn,2, (0,0,255),2)
+    max_hor_delta = 0
+    for pix in range_wrap(c,corns_id[0],corns_id[3]):
+        max_hor_delta = max(max_hor_delta, abs(pix[0][0]-corns[0][0]))
+    max_ver_delta = 0
+    for pix in range_wrap(c,corns_id[1],corns_id[0]):
+        max_ver_delta = max(max_ver_delta, abs(pix[0][1]-corns[0][1]))
+    if max_hor_delta < 3 and max_ver_delta < 3:
+        starting_piece_id = cii
+    max_hor_delta = 0
+    for pix in range_wrap(c,corns_id[2],corns_id[1]):
+        max_hor_delta = max(max_hor_delta, abs(pix[0][0]-corns[1][0]))
+        #im[pix[0][1],pix[0][0]] = (0,255,0)
+    if max_hor_delta < 3:
+        edge_pieces_right.append(cii)
 
-    k = cv2.waitKey(0)
-    if k == ord("q"):
-        exit()
+print(edge_pieces_right)
+res = [[starting_piece_id]]
+q = set(i for i in range(len(contours)) if i != starting_piece_id)
+line_end = 0
+while q:
+    if line_end:
+        id = res[-1][0]
+        edge1 = range_wrap(contours[id],corners[id][3],corners[id][2])
+        best_diff = 1e9
+        best_id = -1
+        for id2 in q:
+            edge2 = range_wrap(contours[id2],corners[id2][1],corners[id2][0])
+            diff = sum(abs(edge1[i][0][1]-edge2[i][0][1]) for i in range(min(len(edge1),len(edge2))))
+            if diff<best_diff:
+                best_diff = diff
+                best_id = id2
+        res.append([best_id])
+    else:
+        id = res[-1][-1]
+        edge1 = range_wrap(contours[id],corners[id][2],corners[id][1])
+        best_diff = 1e9
+        best_id = -1
+        for id2 in q:
+            edge2 = range_wrap(contours[id2],corners[id2][0],corners[id2][3])
+            diff = sum(abs(edge1[i][0][0]-edge2[i][0][0]) for i in range(min(len(edge1),len(edge2))))
+            if diff<best_diff:
+                best_diff = diff
+                best_id = id2
+        res[-1].append(best_id)
+    q.remove(best_id)
+    line_end = best_id in edge_pieces_right
+
+print(res)    
+res_im = np.zeros((1500,1500,3),dtype=np.uint8)
+ctr = (10,10)
+next_line_start = (10,10)
+for l in res:
+    ctr = next_line_start
+    next_line_start = (ctr[0],ctr[1]+corners_coord[l[0]][3][1]-corners_coord[l[0]][0][1])
+    for id in l:
+        # dfs over pixels in contour
+        q = [(corners_coord[id][0][0]+(corners_coord[id][2][0]-corners_coord[id][0][0])//2,corners_coord[id][0][1]+(corners_coord[id][2][1]-corners_coord[id][0][1])//2)]
+        #print(q)
+        seen = set(q[0])
+        while q:
+            node = q.pop()
+            #print(corners_coord[id])
+            #print(node)
+            res_im[ctr[1]+node[1]-corners_coord[id][0][1],ctr[0]+node[0]-corners_coord[id][0][0]]=im[node[1],node[0]]
+            for delta in [(1,0),(-1,0),(0,1),(0,-1)]:
+                next = (node[0]+delta[0],node[1]+delta[1])
+                if next not in contour_sets[id] and next not in seen:
+                    seen.add(next)
+                    q.append(next)
+        ctr = (ctr[0]+corners_coord[l[0]][1][0]-corners_coord[l[0]][0][0],ctr[1])
+
+img = im.copy()
+#cv2.drawContours(img, contours, -1, (0,255,0), 2)
+cv2.imshow("1",img)
+cv2.imshow("2",res_im)
+k = cv2.waitKey(0)
