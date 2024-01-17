@@ -34,12 +34,13 @@ for ci1 in range(len(contours)):
 contours = [c[1] for i,c in enumerate(contours) if i not in to_remove]
 contour_sets = [set(tuple(cc[0]) for cc in c) for c in contours]
 print(len(contours))
-#finding corners
+# finding corners
 corners = []
 corners_coord = []
 starting_piece_id = -1
 edge_pieces_right = []
 for cii,c in enumerate(contours):
+    # find corners
     box = cv2.boundingRect(c)
     rect_corns = [(box[0],box[1]),(box[0]+box[2], box[1]), (box[0]+box[2],box[1]+box[3]), (box[0],box[1]+box[3])]
     corns = [-1,-1,-1,-1]
@@ -56,6 +57,7 @@ for cii,c in enumerate(contours):
     corners_coord.append(corns)
     for corn in corns:
         cv2.circle(im, corn,2, (0,0,255),2)
+    # find starting piece (top left piece)
     max_hor_delta = 0
     for pix in range_wrap(c,corns_id[0],corns_id[3]):
         max_hor_delta = max(max_hor_delta, abs(pix[0][0]-corns[0][0]))
@@ -65,13 +67,14 @@ for cii,c in enumerate(contours):
     if max_hor_delta < 3 and max_ver_delta < 3:
         starting_piece_id = cii
     max_hor_delta = 0
+    # find line end pieces
     for pix in range_wrap(c,corns_id[2],corns_id[1]):
         max_hor_delta = max(max_hor_delta, abs(pix[0][0]-corns[1][0]))
-        #im[pix[0][1],pix[0][0]] = (0,255,0)
     if max_hor_delta < 3:
         edge_pieces_right.append(cii)
 
 print(edge_pieces_right)
+# create mapping to fit pieces in
 res = [[starting_piece_id]]
 q = set(i for i in range(len(contours)) if i != starting_piece_id)
 line_end = 0
@@ -83,6 +86,9 @@ while q:
         best_id = -1
         for id2 in q:
             edge2 = range_wrap(contours[id2],corners[id2][1],corners[id2][0])
+            # TODO: for two matching pieces one might have a longer contour in curves due
+            # to being in the outer curve so indexes can go out of sync, might be better
+            # to compare pixels that are in the same line instead of just ith pixel of the contour
             diff = sum(abs(edge1[i][0][1]-edge2[i][0][1]) for i in range(min(len(edge1),len(edge2))))
             if diff<best_diff:
                 best_diff = diff
@@ -95,7 +101,8 @@ while q:
         best_id = -1
         for id2 in q:
             edge2 = range_wrap(contours[id2],corners[id2][0],corners[id2][3])
-            diff = sum(abs(edge1[i][0][0]-edge2[i][0][0]) for i in range(min(len(edge1),len(edge2))))
+            #TODO same here
+            diff = sum(abs(edge1[i][0][0]-edge2[i][0][0]+2) for i in range(min(len(edge1),len(edge2))))
             if diff<best_diff:
                 best_diff = diff
                 best_id = id2
@@ -104,6 +111,7 @@ while q:
     line_end = best_id in edge_pieces_right
 
 print(res)    
+# copy pieces to result image
 res_im = np.zeros((1500,1500,3),dtype=np.uint8)
 ctr = (10,10)
 next_line_start = (10,10)
@@ -113,12 +121,9 @@ for l in res:
     for id in l:
         # dfs over pixels in contour
         q = [(corners_coord[id][0][0]+(corners_coord[id][2][0]-corners_coord[id][0][0])//2,corners_coord[id][0][1]+(corners_coord[id][2][1]-corners_coord[id][0][1])//2)]
-        #print(q)
         seen = set(q[0])
         while q:
             node = q.pop()
-            #print(corners_coord[id])
-            #print(node)
             res_im[ctr[1]+node[1]-corners_coord[id][0][1],ctr[0]+node[0]-corners_coord[id][0][0]]=im[node[1],node[0]]
             for delta in [(1,0),(-1,0),(0,1),(0,-1)]:
                 next = (node[0]+delta[0],node[1]+delta[1])
