@@ -73,7 +73,6 @@ for cii,c in enumerate(contours):
     if max_hor_delta < 3:
         edge_pieces_right.append(cii)
 
-print(edge_pieces_right)
 # create mapping to fit pieces in
 res = [[starting_piece_id]]
 q = set(i for i in range(len(contours)) if i != starting_piece_id)
@@ -89,7 +88,7 @@ while q:
             # TODO: for two matching pieces one might have a longer contour in curves due
             # to being in the outer curve so indexes can go out of sync, might be better
             # to compare pixels that are in the same line instead of just ith pixel of the contour
-            diff = sum(abs(edge1[i][0][1]-edge2[i][0][1]) for i in range(min(len(edge1),len(edge2))))
+            diff = sum(abs(edge1[i][0][1]-corners_coord[id][3][1]-edge2[-i-1][0][1]+corners_coord[id2][0][1]) for i in range(min(len(edge1),len(edge2))))
             if diff<best_diff:
                 best_diff = diff
                 best_id = id2
@@ -102,7 +101,7 @@ while q:
         for id2 in q:
             edge2 = range_wrap(contours[id2],corners[id2][0],corners[id2][3])
             #TODO same here
-            diff = sum(abs(edge1[i][0][0]-edge2[i][0][0]+2) for i in range(min(len(edge1),len(edge2))))
+            diff = sum(abs(edge1[i][0][0]-corners_coord[id][1][0]-edge2[-i-1][0][0]+corners_coord[id2][0][0]) for i in range(min(len(edge1),len(edge2))))
             if diff<best_diff:
                 best_diff = diff
                 best_id = id2
@@ -112,7 +111,7 @@ while q:
 
 print(res)    
 # copy pieces to result image
-res_im = np.zeros((1500,1500,3),dtype=np.uint8)
+res_im = np.zeros((2000,2000,3),dtype=np.uint8)
 ctr = (10,10)
 next_line_start = (10,10)
 for l in res:
