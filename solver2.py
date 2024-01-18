@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-def dtw(a,b,ca,cb, check_deltas=True):
+def dtw(a,b,ca,cb, aid,bid,check_deltas=True):
     best_res = 1e9
     best_delta = None
     min_d, max_d = -2, 3
@@ -13,7 +13,10 @@ def dtw(a,b,ca,cb, check_deltas=True):
         n = len(a)
         m = len(b)
         dp = [[0 for _ in range(m)] for _ in range(n)]
-        dist = lambda a,b: location_mult * abs(a[0]-b[0]-ca[0]+cb[0] + delta) + location_mult * abs(a[1]-b[1]-ca[1]+cb[1]) + abs(int(im[a[1]][a[0]][0]) - int(im[b[1]][b[0]][0])) + abs(int(im[a[1]][a[0]][1]) - int(im[b[1]][b[0]][1])) + abs(int(im[a[1]][a[0]][2]) - int(im[b[1]][b[0]][2]))
+        pixcola = contour_inner[aid][contour_maps[aid][a]]
+        pixcolb = contour_inner[bid][contour_maps[bid][b]]
+        #dist = lambda a,b: location_mult * abs(a[0]-b[0]-ca[0]+cb[0] + delta) + location_mult * abs(a[1]-b[1]-ca[1]+cb[1]) + abs(int(im[a[1]][a[0]][0]) - int(im[b[1]][b[0]][0])) + abs(int(im[a[1]][a[0]][1]) - int(im[b[1]][b[0]][1])) + abs(int(im[a[1]][a[0]][2]) - int(im[b[1]][b[0]][2]))
+        dist = lambda a,b: location_mult * abs(a[0]-b[0]-ca[0]+cb[0] + delta) + location_mult * abs(a[1]-b[1]-ca[1]+cb[1]) + abs(int(im[pixcola[1]][pixcola[0]][0]) - int(im[pixcolb[1]][pixcolb[0]][0])) + abs(int(im[pixcola[1]][pixcola[0]][1]) - int(im[pixcolb[1]][pixcolb[0]][1])) + abs(int(im[pixcola[1]][pixcola[0]][2]) - int(im[pixcolb[1]][pixcolb[0]][2]))
         for i in range(1,n):
             dp[i][0] = dist(a[i][0],b[0][0])+dp[i-1][0]
         for j in range(1,m):
@@ -123,7 +126,7 @@ def find_res():
             for id2 in bag:
                 edge2 = range_wrap(contours[id2],corners[id2][1],corners[id2][0])
                 #diff = sum(abs(edge1[i][0][1]-corners_coord[id][3][1]-edge2[-i-1][0][1]+corners_coord[id2][0][1]) for i in range(min(len(edge1),len(edge2))))
-                diff, delta = dtw(edge1,edge2[::-1],corners_coord[id][3],corners_coord[id2][0])
+                diff, delta = dtw(edge1,edge2[::-1],corners_coord[id][3],corners_coord[id2][0],id,id2)
                 print(f"type1: {id} vs {id2}: {diff}")
                 if diff<best_diff:
                     best_diff = diff
@@ -149,7 +152,7 @@ def find_res():
             for id2 in bag:
                 edge2 = range_wrap(contours[id2],corners[id2][0],corners[id2][3])
                 #diff = sum(abs(edge1[i][0][0]-corners_coord[id][1][0]-edge2[-i-1][0][0]+corners_coord[id2][0][0]) for i in range(min(len(edge1),len(edge2))))
-                diff, delta = dtw(edge1,edge2[::-1],corners_coord[id][1],corners_coord[id2][0])
+                diff, delta = dtw(edge1,edge2[::-1],corners_coord[id][1],corners_coord[id2][0],id,id2)
                 #if len(res)>1:
                 #    edge2b = range_wrap(contours[id2],corners[id2][3],corners[id2][2])
                 #    diff_mod = dtw(edge1b,edge2b[::-1],corners_coord[idb][3],corners_coord[id2][0], False)
@@ -260,7 +263,7 @@ for id,c in enumerate(contours):
         for delta in [(1,0),(-1,0),(0,1),(0,-1)]:
             next = (node[0]+delta[0],node[1]+delta[1])
             if next in contour_sets[id]:
-                contours_inner[contour_maps[next]] = node
+                contours_inner[contour_maps[id][next]] = node
             elif next not in seen:
                 seen.add(next)
                 q.append(next)
