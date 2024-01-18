@@ -58,9 +58,8 @@ print(len(contours))
 # finding corners
 corners = []
 corners_coord = []
-starting_piece_id = -1
+corner_pieces = [-1,-1,-1,-1]
 # top, right, bot, left
-# NB! bot not implemented
 edge_pieces = [[],[],[],[]]
 for cii,c in enumerate(contours):
     # find corners
@@ -88,34 +87,58 @@ for cii,c in enumerate(contours):
     for pix in range_wrap(c,corns_id[1],corns_id[0]):
         max_ver_delta = max(max_ver_delta, abs(pix[0][1]-corns[0][1]))
     if max_hor_delta < 3 and max_ver_delta < 3:
-        starting_piece_id = cii
+        corner_pieces[0] = cii
     elif max_ver_delta < 3:
         edge_pieces[0].append(cii)
     elif max_hor_delta < 3:
         edge_pieces[3].append(cii)
-    max_hor_delta = 0
     # find line end pieces
+    max_hor_delta = 0
     for pix in range_wrap(c,corns_id[2],corns_id[1]):
         max_hor_delta = max(max_hor_delta, abs(pix[0][0]-corns[1][0]))
     if max_hor_delta < 3:
-        edge_pieces[1].append(cii)
-
-row_w = len(edge_pieces[0])+1
+        if cii in edge_pieces[0]:
+            edge_pieces[0].remove(cii)
+            corner_pieces[1] = cii
+        else:
+            edge_pieces[1].append(cii)
+    # find last line pieces
+    max_ver_delta = 0
+    for pix in range_wrap(c,corns_id[3],corns_id[2]):
+        max_ver_delta = max(max_ver_delta, abs(pix[0][1]-corns[2][1]))
+    if max_ver_delta < 3:
+        if cii in edge_pieces[1]:
+            corner_pieces[2] = cii
+            edge_pieces[1].remove(cii)
+        elif cii in edge_pieces[3]:
+            corner_pieces[3] = cii
+            edge_pieces[3].remove(cii)
+        else:
+            edge_pieces[2].append(cii)
+    
+row_w = len(edge_pieces[0])+2
+col_h = len(edge_pieces[1])+2
 # create mapping to fit pieces in
-res = [[starting_piece_id]]
-q = set(i for i in range(len(contours)) if i != starting_piece_id and i not in edge_pieces[0] and i not in edge_pieces[3])
-line_end = 0
-while q:
-    if line_end:
+res = [[corner_pieces[0]]]
+q = set(i for i in range(len(contours)) if i not in corner_pieces and max(i in edge_pieces[j] for j in range(4)) == 0)
+for _ in range(row_w*col_h-1):
+    if len(res) == 1 and len(res[0]) == row_w-1:
+        res[-1].append(corner_pieces[1])
+        continue
+    elif len(res) == col_h-1 and len(res[-1]) == row_w:
+        res.append([corner_pieces[3]])
+        continue
+    elif len(res) == col_h and len(res[-1]) == row_w-1:
+        res[-1].append(corner_pieces[2])
+        continue
+    if len(res[-1]) == row_w:
         id = res[-1][0]
         edge1 = range_wrap(contours[id],corners[id][3],corners[id][2])
         best_diff = 1e9
         best_id = -1
-        for id2 in edge_pieces[3]:
+        bag = edge_pieces[3]
+        for id2 in bag:
             edge2 = range_wrap(contours[id2],corners[id2][1],corners[id2][0])
-            # TODO: for two matching pieces one might have a longer contour in curves due
-            # to being in the outer curve so indexes can go out of sync, might be better
-            # to compare pixels that are in the same line instead of just ith pixel of the contour
             #diff = sum(abs(edge1[i][0][1]-corners_coord[id][3][1]-edge2[-i-1][0][1]+corners_coord[id2][0][1]) for i in range(min(len(edge1),len(edge2))))
             diff = dtw(edge1,edge2[::-1],corners_coord[id][3],corners_coord[id2][0])
             if diff<best_diff:
@@ -130,9 +153,16 @@ while q:
             edge1b = range_wrap(contours[idb],corners[idb][3],corners[idb][2])
         best_diff = 1e9
         best_id = -1
-        for id2 in q if len(res)>1 else edge_pieces[0]:
+        if len(res)==1:
+            bag = edge_pieces[0]
+        elif len(q)==0:
+            bag = edge_pieces[2]
+        elif len(res[-1])==row_w-1:
+            bag = edge_pieces[1]
+        else:
+            bag = q
+        for id2 in bag:
             edge2 = range_wrap(contours[id2],corners[id2][0],corners[id2][3])
-            #TODO same here
             #diff = sum(abs(edge1[i][0][0]-corners_coord[id][1][0]-edge2[-i-1][0][0]+corners_coord[id2][0][0]) for i in range(min(len(edge1),len(edge2))))
             diff = dtw(edge1,edge2[::-1],corners_coord[id][1],corners_coord[id2][0])
             if len(res)>1:
@@ -143,14 +173,11 @@ while q:
                 best_id = id2
         res[-1].append(best_id)
     print(best_id)
-    if len(res)==1:
-        edge_pieces[0].remove(best_id)
-    elif len(res[-1])==1:
-        edge_pieces[3].remove(best_id)
-    else:
-        q.remove(best_id)
-    #line_end = best_id in edge_pieces_right or len(res[-1]) > 20
-    line_end = len(res[-1]) == row_w
+    if best_id == -1:
+        print(res)
+        print(len(res))
+        print(len(res[-1]))
+    bag.remove(best_id)
 
 print(res)    
 # copy pieces to result image
