@@ -6,17 +6,24 @@ def dtw(a,b,ca,cb, aid,bid,check_deltas=True):
     best_delta = None
     min_d, max_d = -2, 3
     min_d, max_d = 0, 1
-    location_mult = 0
+    location_mult = 10
     if not check_deltas:
         min_d, max_d = 1, 2
     for delta in range(min_d, max_d):
         n = len(a)
         m = len(b)
         dp = [[0 for _ in range(m)] for _ in range(n)]
-        pixcola = contour_inner[aid][contour_maps[aid][a]]
-        pixcolb = contour_inner[bid][contour_maps[bid][b]]
         #dist = lambda a,b: location_mult * abs(a[0]-b[0]-ca[0]+cb[0] + delta) + location_mult * abs(a[1]-b[1]-ca[1]+cb[1]) + abs(int(im[a[1]][a[0]][0]) - int(im[b[1]][b[0]][0])) + abs(int(im[a[1]][a[0]][1]) - int(im[b[1]][b[0]][1])) + abs(int(im[a[1]][a[0]][2]) - int(im[b[1]][b[0]][2]))
-        dist = lambda a,b: location_mult * abs(a[0]-b[0]-ca[0]+cb[0] + delta) + location_mult * abs(a[1]-b[1]-ca[1]+cb[1]) + abs(int(im[pixcola[1]][pixcola[0]][0]) - int(im[pixcolb[1]][pixcolb[0]][0])) + abs(int(im[pixcola[1]][pixcola[0]][1]) - int(im[pixcolb[1]][pixcolb[0]][1])) + abs(int(im[pixcola[1]][pixcola[0]][2]) - int(im[pixcolb[1]][pixcolb[0]][2]))
+        def dist(a,b):
+            ida = contour_maps[aid][tuple(a)]
+            idb = contour_maps[bid][tuple(b)]
+            while ida not in contours_inner[aid]:
+                ida = (ida+1)%len(contours[aid])
+            while idb not in contours_inner[bid]:
+                idb = (idb+1)%len(contours[bid])
+            pixcola = contours_inner[aid][ida]
+            pixcolb = contours_inner[bid][idb]
+            return location_mult * abs(a[0]-b[0]-ca[0]+cb[0] + delta) + location_mult * abs(a[1]-b[1]-ca[1]+cb[1]) + abs(int(im[pixcola[1]][pixcola[0]][0]) - int(im[pixcolb[1]][pixcolb[0]][0])) + abs(int(im[pixcola[1]][pixcola[0]][1]) - int(im[pixcolb[1]][pixcolb[0]][1])) + abs(int(im[pixcola[1]][pixcola[0]][2]) - int(im[pixcolb[1]][pixcolb[0]][2]))
         for i in range(1,n):
             dp[i][0] = dist(a[i][0],b[0][0])+dp[i-1][0]
         for j in range(1,m):
@@ -242,15 +249,13 @@ cv2.waitKey(0)
 print(c)
 #exit()
 contour_sets = [set(tuple(cc[0]) for cc in c) for c in contours]
-contour_maps = [{cc:i for i,cc in enumerate(c)} for c in contours]
+contour_maps = [{tuple(cc[0]):i for i,cc in enumerate(c)} for c in contours]
 
 
 
 print(f"{len(contours)} contours")
 # finding corners
 corners, corners_coord, corner_pieces, edge_pieces = find_pieces()
-res = find_res()
-print(res) 
 
 #dfs vol 2
 contours_inner = []
@@ -263,11 +268,13 @@ for id,c in enumerate(contours):
         for delta in [(1,0),(-1,0),(0,1),(0,-1)]:
             next = (node[0]+delta[0],node[1]+delta[1])
             if next in contour_sets[id]:
-                contours_inner[contour_maps[id][next]] = node
+                contours_inner[id][contour_maps[id][next]] = node
             elif next not in seen:
                 seen.add(next)
                 q.append(next)
 
+res = find_res()
+print(res) 
 
 # copy pieces to result image
 res_im = calc_res_img()
