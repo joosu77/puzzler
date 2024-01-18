@@ -1,29 +1,50 @@
 import cv2
 import numpy as np
 
-def dtw(a,b,ca,cb):
-    n = len(a)
-    m = len(b)
-    dp = [[0 for _ in range(m)] for _ in range(n)]
-    dist = lambda a,b: abs(a[0]-b[0]-ca[0]+cb[0])+abs(a[1]-b[1]-ca[1]+cb[1])
-    for i in range(1,n):
-        dp[i][0] = dist(a[i][0],b[0][0])+dp[i-1][0]
-    for j in range(1,m):
-        dp[0][j] = dist(a[0][0],b[j][0])+dp[0][j-1]
-    for i in range(1,n):
+def dtw(a,b,ca,cb, check_deltas=True):
+    #print()
+    #print(a)
+    #print(b)
+    #print(ca)
+    #print(cb)
+    #print(a.shape)
+    #print(b.shape)
+    #exit()
+    best_res = 1e9
+    best_delta = None
+    min_d, max_d = -2, 3
+    if not check_deltas:
+        min_d, max_d = 1, 2
+    for delta in range(min_d, max_d):
+        n = len(a)
+        m = len(b)
+        dp = [[0 for _ in range(m)] for _ in range(n)]
+        dist = lambda a,b: abs(a[0]-b[0]-ca[0]+cb[0] + delta)+abs(a[1]-b[1]-ca[1]+cb[1])
+        for i in range(1,n):
+            dp[i][0] = dist(a[i][0],b[0][0])+dp[i-1][0]
         for j in range(1,m):
-            d = dist(a[i][0],b[j][0])
-            if dp[i-1][j] <= dp[i-1][j-1] and dp[i-1][j] <= dp[i][j-1]:
-                dp[i][j] = d + dp[i-1][j]
-            elif dp[i-1][j-1] <= dp[i][j-1]:
-                dp[i][j] = d + dp[i-1][j-1]
-            else:
-                dp[i][j] = d + dp[i][j-1]
-    return dp[n-1][m-1]
+            dp[0][j] = dist(a[0][0],b[j][0])+dp[0][j-1]
+        for i in range(1,n):
+            for j in range(1,m):
+                d = dist(a[i][0],b[j][0])
+                if dp[i-1][j] <= dp[i-1][j-1] and dp[i-1][j] <= dp[i][j-1]:
+                    dp[i][j] = d + dp[i-1][j]
+                elif dp[i-1][j-1] <= dp[i][j-1]:
+                    dp[i][j] = d + dp[i-1][j-1]
+                else:
+                    dp[i][j] = d + dp[i][j-1]
+        if dp[n - 1][m - 1] < best_res:
+            best_res = min(best_res, dp[n - 1][m - 1])
+            best_delta = delta
+    if not check_deltas:
+        return best_res
+    return best_res, best_delta
 
-range_wrap = lambda l, a,b: l[a:b] if a<b else np.concatenate((l[a:],l[:b]))
-manh_d = lambda a,b: abs(a[0]-b[0])+abs(a[1]-b[1])
+range_wrap = lambda l, a, b: l[a:b] if a < b else np.concatenate((l[a:], l[:b]))
+manh_d = lambda a, b: abs(a[0] - b[0]) + abs(a[1] - b[1])
 im = cv2.imread("input_shuffled.png")
+print(im[50][50])
+#exit()
 imgray = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
 ret, thresh = cv2.threshold(imgray, 35, 255, 0)
 contours, hierarch = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
@@ -54,7 +75,7 @@ for ci1 in range(len(contours)):
                 to_remove.add(ci1 if contours[ci1][0] < contours[ci2][0] else ci2)
 contours = [c[1] for i,c in enumerate(contours) if i not in to_remove]
 contour_sets = [set(tuple(cc[0]) for cc in c) for c in contours]
-print(len(contours))
+print(f"{len(contours)} contours")
 # finding corners
 corners = []
 corners_coord = []
@@ -115,79 +136,89 @@ for cii,c in enumerate(contours):
             edge_pieces[3].remove(cii)
         else:
             edge_pieces[2].append(cii)
+
+print(len(corners), corners)
+print(len(corners_coord))
+print(corners_coord[0])
+print(corner_pieces)
+print([len(x) for x in edge_pieces])
     
-row_w = len(edge_pieces[0])+2
-col_h = len(edge_pieces[1])+2
+row_w = len(edge_pieces[0]) + 2
+col_h = len(edge_pieces[1]) + 2
 # create mapping to fit pieces in
-res = [[corner_pieces[0]]]
+res = [[(corner_pieces[0], 0)]]
 q = set(i for i in range(len(contours)) if i not in corner_pieces and max(i in edge_pieces[j] for j in range(4)) == 0)
-for _ in range(row_w*col_h-1):
+for i in range(row_w * col_h - 1):
     if len(res) == 1 and len(res[0]) == row_w-1:
-        res[-1].append(corner_pieces[1])
+        res[-1].append((corner_pieces[1], 0))
         continue
     elif len(res) == col_h-1 and len(res[-1]) == row_w:
-        res.append([corner_pieces[3]])
+        res.append([(corner_pieces[3], 0)])
         continue
     elif len(res) == col_h and len(res[-1]) == row_w-1:
-        res[-1].append(corner_pieces[2])
+        res[-1].append((corner_pieces[2], 0))
         continue
     if len(res[-1]) == row_w:
-        id = res[-1][0]
+        id, _ = res[-1][0]
         edge1 = range_wrap(contours[id],corners[id][3],corners[id][2])
         best_diff = 1e9
         best_id = -1
+        best_delta = 0
         bag = edge_pieces[3]
         for id2 in bag:
             edge2 = range_wrap(contours[id2],corners[id2][1],corners[id2][0])
             #diff = sum(abs(edge1[i][0][1]-corners_coord[id][3][1]-edge2[-i-1][0][1]+corners_coord[id2][0][1]) for i in range(min(len(edge1),len(edge2))))
-            diff = dtw(edge1,edge2[::-1],corners_coord[id][3],corners_coord[id2][0])
+            diff, delta = dtw(edge1,edge2[::-1],corners_coord[id][3],corners_coord[id2][0])
             if diff<best_diff:
                 best_diff = diff
                 best_id = id2
-        res.append([best_id])
+                best_delta = delta
+        res.append([(best_id, best_delta)])
     else:
-        id = res[-1][-1]
+        id, _ = res[-1][-1]
         edge1 = range_wrap(contours[id],corners[id][2],corners[id][1])
         if len(res)>1:
-            idb = res[-2][len(res[-1])]
+            idb, _ = res[-2][len(res[-1])]
             edge1b = range_wrap(contours[idb],corners[idb][3],corners[idb][2])
         best_diff = 1e9
         best_id = -1
         if len(res)==1:
             bag = edge_pieces[0]
-        elif len(q)==0:
-            bag = edge_pieces[2]
         elif len(res[-1])==row_w-1:
             bag = edge_pieces[1]
+        elif len(q)==0:
+            bag = edge_pieces[2]
         else:
             bag = q
         for id2 in bag:
             edge2 = range_wrap(contours[id2],corners[id2][0],corners[id2][3])
             #diff = sum(abs(edge1[i][0][0]-corners_coord[id][1][0]-edge2[-i-1][0][0]+corners_coord[id2][0][0]) for i in range(min(len(edge1),len(edge2))))
-            diff = dtw(edge1,edge2[::-1],corners_coord[id][1],corners_coord[id2][0])
+            diff, delta = dtw(edge1,edge2[::-1],corners_coord[id][1],corners_coord[id2][0])
             if len(res)>1:
                 edge2b = range_wrap(contours[id2],corners[id2][3],corners[id2][2])
-                diff += dtw(edge1b,edge2b[::-1],corners_coord[idb][3],corners_coord[id2][0])
+                diff_mod = dtw(edge1b,edge2b[::-1],corners_coord[idb][3],corners_coord[id2][0], False)
+                diff += diff_mod
             if diff<best_diff:
                 best_diff = diff
                 best_id = id2
-        res[-1].append(best_id)
-    print(best_id)
+                best_delta = delta
+        res[-1].append((best_id, best_delta))
+    print(i, best_id)
     if best_id == -1:
         print(res)
         print(len(res))
         print(len(res[-1]))
     bag.remove(best_id)
 
-print(res)    
+print(res) 
 # copy pieces to result image
 res_im = np.zeros((2000,2000,3),dtype=np.uint8)
 ctr = (10,10)
 next_line_start = (10,10)
 for l in res:
     ctr = next_line_start
-    next_line_start = (ctr[0],ctr[1]+corners_coord[l[0]][3][1]-corners_coord[l[0]][0][1])
-    for id in l:
+    next_line_start = (ctr[0],ctr[1]+corners_coord[l[0][0]][3][1]-corners_coord[l[0][0]][0][1])
+    for id, delta in l:
         # dfs over pixels in contour
         q = [(corners_coord[id][0][0]+(corners_coord[id][2][0]-corners_coord[id][0][0])//2,corners_coord[id][0][1]+(corners_coord[id][2][1]-corners_coord[id][0][1])//2)]
         seen = set(q[0])
@@ -199,7 +230,7 @@ for l in res:
                 if next not in contour_sets[id] and next not in seen:
                     seen.add(next)
                     q.append(next)
-        ctr = (ctr[0]+corners_coord[l[0]][1][0]-corners_coord[l[0]][0][0],ctr[1])
+        ctr = (ctr[0]+corners_coord[l[0][0]][1][0]-corners_coord[l[0][0]][0][0],ctr[1])
 
 img = im.copy()
 #cv2.drawContours(img, contours, -1, (0,255,0), 2)
