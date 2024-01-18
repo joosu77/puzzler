@@ -2,24 +2,17 @@ import cv2
 import numpy as np
 
 def dtw(a,b,ca,cb, check_deltas=True):
-    #print()
-    #print(a)
-    #print(b)
-    #print(ca)
-    #print(cb)
-    #print(a.shape)
-    #print(b.shape)
-    #exit()
     best_res = 1e9
     best_delta = None
     min_d, max_d = -2, 3
+    location_mult = 10
     if not check_deltas:
         min_d, max_d = 1, 2
     for delta in range(min_d, max_d):
         n = len(a)
         m = len(b)
         dp = [[0 for _ in range(m)] for _ in range(n)]
-        dist = lambda a,b: abs(a[0]-b[0]-ca[0]+cb[0] + delta)+abs(a[1]-b[1]-ca[1]+cb[1])
+        dist = lambda a,b: location_mult * abs(a[0]-b[0]-ca[0]+cb[0] + delta) + location_mult * abs(a[1]-b[1]-ca[1]+cb[1]) + abs(int(im[a[1]][a[0]][0]) - int(im[b[1]][b[0]][0])) + abs(int(im[a[1]][a[0]][1]) - int(im[b[1]][b[0]][1])) + abs(int(im[a[1]][a[0]][2]) - int(im[b[1]][b[0]][2]))
         for i in range(1,n):
             dp[i][0] = dist(a[i][0],b[0][0])+dp[i-1][0]
         for j in range(1,m):
@@ -42,11 +35,11 @@ def dtw(a,b,ca,cb, check_deltas=True):
 
 range_wrap = lambda l, a, b: l[a:b] if a < b else np.concatenate((l[a:], l[:b]))
 manh_d = lambda a, b: abs(a[0] - b[0]) + abs(a[1] - b[1])
-im = cv2.imread("input_shuffled.png")
+im = cv2.imread("input_shuffled_small.png")
 print(im[50][50])
 #exit()
 imgray = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
-ret, thresh = cv2.threshold(imgray, 35, 255, 0)
+ret, thresh = cv2.threshold(imgray, 135, 255, cv2.THRESH_BINARY_INV)
 contours, hierarch = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
 # calculate areas
 contours = [(cv2.contourArea(c),c) for c in contours]
