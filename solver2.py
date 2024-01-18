@@ -229,6 +229,8 @@ for ci1 in range(len(contours)):
             if overlap:
                 to_remove.add(ci1 if contours[ci1][0] < contours[ci2][0] else ci2)
 contours = [c[1] for i,c in enumerate(contours) if i not in to_remove]
+
+
 print(contours[0])
 print(contours[0].shape)
 c = np.array([[im[x[0][1]][x[0][0]] for x in contours[54]] for i in range(100)])
@@ -237,6 +239,25 @@ cv2.waitKey(0)
 print(c)
 exit()
 contour_sets = [set(tuple(cc[0]) for cc in c) for c in contours]
+
+#dfs vol 2
+contours_inner = []
+for id,c in enumerate(contours):
+    q = [(corners_coord[id][0][0]+(corners_coord[id][2][0]-corners_coord[id][0][0])//2,corners_coord[id][0][1]+(corners_coord[id][2][1]-corners_coord[id][0][1])//2)]
+    contours_inner.append(set())
+    seen = set(q[0])
+    while q:
+        node = q.pop()
+        res_im[ctr[1]+node[1]-corners_coord[id][0][1],ctr[0]+node[0]-corners_coord[id][0][0]]=im[node[1],node[0]]
+        for delta in [(1,0),(-1,0),(0,1),(0,-1)]:
+            next = (node[0]+delta[0],node[1]+delta[1])
+            if next in contour_sets[id]:
+                contours_inner[-1].add(node)
+            elif next not in seen:
+                seen.add(next)
+                q.append(next)
+
+
 print(f"{len(contours)} contours")
 # finding corners
 corners, corners_coord, corner_pieces, edge_pieces = find_pieces()
