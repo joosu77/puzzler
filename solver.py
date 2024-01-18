@@ -1,6 +1,25 @@
 import cv2
 import numpy as np
 
+def dtw(a,b):
+    n = len(a)
+    m = len(b)
+    dp = [[0 for _ in range(m)] for _ in range(n)]
+    for i in range(1,n):
+        dp[i][0] = abs(a[i][0][0]-b[0][0][0])+abs(a[i][0][1]-b[0][0][1])+dp[i-1][0]
+    for j in range(1,m):
+        dp[0][j] = abs(a[0][0][0]-b[j][0][0])+abs(a[0][0][1]-b[j][0][1])+dp[0][j-1]
+    for i in range(1,n):
+        for j in range(1,m):
+            d = abs(a[i][0][0]-b[j][0][0])+abs(a[i][0][1]-b[j][0][1])
+            if dp[i-1][j] <= dp[i-1][j-1] and dp[i-1][j] <= dp[i][j-1]:
+                dp[i][j] = d + dp[i-1][j]
+            elif dp[i-1][j-1] <= dp[i][j-1]:
+                dp[i][j] = d + dp[i-1][j-1]
+            else:
+                dp[i][j] = d + dp[i][j-1]
+    return dp[n-1][m-1]
+
 range_wrap = lambda l, a,b: l[a:b] if a<b else np.concatenate((l[a:],l[:b]))
 im = cv2.imread("input_shuffled.png")
 imgray = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
@@ -88,7 +107,8 @@ while q:
             # TODO: for two matching pieces one might have a longer contour in curves due
             # to being in the outer curve so indexes can go out of sync, might be better
             # to compare pixels that are in the same line instead of just ith pixel of the contour
-            diff = sum(abs(edge1[i][0][1]-corners_coord[id][3][1]-edge2[-i-1][0][1]+corners_coord[id2][0][1]) for i in range(min(len(edge1),len(edge2))))
+            #diff = sum(abs(edge1[i][0][1]-corners_coord[id][3][1]-edge2[-i-1][0][1]+corners_coord[id2][0][1]) for i in range(min(len(edge1),len(edge2))))
+            diff = dtw(edge1,edge2[::-1])
             if diff<best_diff:
                 best_diff = diff
                 best_id = id2
@@ -101,13 +121,14 @@ while q:
         for id2 in q:
             edge2 = range_wrap(contours[id2],corners[id2][0],corners[id2][3])
             #TODO same here
-            diff = sum(abs(edge1[i][0][0]-corners_coord[id][1][0]-edge2[-i-1][0][0]+corners_coord[id2][0][0]) for i in range(min(len(edge1),len(edge2))))
+            #diff = sum(abs(edge1[i][0][0]-corners_coord[id][1][0]-edge2[-i-1][0][0]+corners_coord[id2][0][0]) for i in range(min(len(edge1),len(edge2))))
+            diff = dtw(edge1,edge2[::-1])
             if diff<best_diff:
                 best_diff = diff
                 best_id = id2
         res[-1].append(best_id)
     q.remove(best_id)
-    line_end = best_id in edge_pieces_right
+    line_end = best_id in edge_pieces_right or len(res[-1]) > 20
 
 print(res)    
 # copy pieces to result image
