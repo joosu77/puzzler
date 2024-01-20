@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 import time
+import matplotlib.pyplot as plt
+from scipy.signal import argrelextrema
 
 PRINT_CORNERS = False
 
@@ -9,6 +11,7 @@ def dtw(a, b, ca, cb, aid, bid, contours, im):
     #location_mult = 10
     location_mult = 13
     #location_mult = 5
+    location_mult = 13
     n = len(a)
     m = len(b)
     dp = [[0 for _ in range(m)] for _ in range(n)]
@@ -79,13 +82,45 @@ def find_pieces(contours, im):
         corns = [-1, -1, -1, -1]
         corns_d = [1e9, 1e9, 1e9, 1e9]
         corns_id = [-1, -1, -1, -1]
-        for i, pix in enumerate(c.points):
-            for ci in range(4):
-                d = abs(rect_corns[ci][0] - pix[0][0])**2 + abs(rect_corns[ci][1] - pix[0][1])**2
+
+
+        colours = [(0, 0, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255)]
+        dirs = [(-1, -1), (1, -1), (1, 1), (-1, 1)]
+        for ci in range(4):
+            ds = []
+            for i, pix in enumerate(c.points):
+                d = abs(rect_corns[ci][0] - pix[0][0])**1 + abs(rect_corns[ci][1] - pix[0][1])**1
+                ds.append(d)
                 if d < corns_d[ci]:
                     corns_d[ci] = d
                     corns[ci] = pix[0]
                     corns_id[ci] = i
+            
+            minima = [i for i in range(len(ds)) if ds[(i - 3) % len(ds)] > ds[i] and ds[(i + 3) % len(ds)] > ds[i]]
+            minimaa = []
+            i = 0
+            while i < len(minima):
+                d = 1
+                while i < len(minima) - d and minima[i + d] == minima[i] + d:
+                    d += 1
+                minimaa.append(sum(minima[i:i + d]) / d)
+                i += d
+            minima = minimaa
+            minima = sorted([(ds[int(m)], int(m)) for m in minima])[:3]
+            minima = [(c.points[m[1]][0], m[1]) for m in minima]
+            minima = sorted([((loc[0] - c.mass_centre[0]) * dirs[ci][0] + (loc[1] - c.mass_centre[1]) * dirs[ci][1], (loc[0], loc[1]), id) for loc, id in minima], reverse=True)
+            #print(minima)
+            for dot, m, id in minima:
+                #cv2.circle(im, m, 2, colours[ci], 2)
+                corns[ci] = m
+                corns_id[ci] = id
+                break
+
+            #plt.plot(ds)
+            #for m in minima:
+            #    plt.axvline(x = m, color="b")
+            #plt.show()
+
         corners.append(corns_id)
         corners_coord.append(corns)
         pieces.append(Piece(c.points, corns_id))
@@ -94,6 +129,8 @@ def find_pieces(contours, im):
         if PRINT_CORNERS:
             for corn in corns:
                 cv2.circle(im, corn, 2, (0, 0, 255), 2)
+            m = c.mass_centre
+            cv2.circle(im, (int(m[0]), int(m[1])), 2, (255, 0, 0), 2)
 
         # find starting piece (top left piece)
         vals = []
@@ -324,6 +361,17 @@ class Contour:
         self.map = {tuple(cc[0]): i for i, cc in enumerate(contour)}
         self.corners = []
         self.inner = None
+        self.mass_centre = None
+        self.calculate_mass_centre()
+    
+    def calculate_mass_centre(self):
+        amount = self.points.shape[0]
+        tx = 0
+        ty = 0
+        for p in self.points:
+            tx += p[0][0]
+            ty += p[0][1]
+        self.mass_centre = (tx / amount, ty / amount)
     
     def __len__(self):
         return len(self.points)
@@ -369,7 +417,7 @@ def main(imgname, threshold_value, threshold_mode):
 
     print(f"Nr of contours: {len(contours)}, top: {len(pieces_ob.top)}, left: {len(pieces_ob.left)}, bot: {len(pieces_ob.bottom)}, right: {len(pieces_ob.right)}")
     img = im.copy()
-    cv2.drawContours(img, [c.points for c in contours], -1, (0,255,0), 2)
+    cv2.drawContours(img, [c.points for c in contours], -1, (0,255,0), 1)
     cv2.imshow("1",img)
     cv2.waitKey(0)
     
@@ -385,7 +433,7 @@ def main(imgname, threshold_value, threshold_mode):
             break
 
 if __name__ == '__main__':
-    #main("input_shuffled.png", 35, 0)
-    main("inp7.png", 135, cv2.THRESH_BINARY_INV)
+    main("input_shuffled.png", 35, 0)
+    #main("tartu_shuffled.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp2.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp3.png", 135, cv2.THRESH_BINARY_INV)
