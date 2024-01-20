@@ -11,7 +11,7 @@ def dtw(a, b, ca, cb, aid, bid, contours, im):
     #location_mult = 10
     location_mult = 13
     #location_mult = 5
-    location_mult = 13
+    #location_mult = 8
     n = len(a)
     m = len(b)
     dp = [[0 for _ in range(m)] for _ in range(n)]
@@ -108,8 +108,13 @@ def find_pieces(contours, im):
             minima = minimaa
             minima = sorted([(ds[int(m)], int(m)) for m in minima])[:3]
             minima = [(c.points[m[1]][0], m[1]) for m in minima]
-            minima = sorted([((loc[0] - c.mass_centre[0]) * dirs[ci][0] + (loc[1] - c.mass_centre[1]) * dirs[ci][1], (loc[0], loc[1]), id) for loc, id in minima], reverse=True)
+            minima = sorted([(((loc[0] - c.mass_centre[0]) * dirs[ci][0] + (loc[1] - c.mass_centre[1]) * dirs[ci][1]) / abs(((loc[0] - c.mass_centre[0])**2 + (loc[1] - c.mass_centre[1])**2)**0.5), (loc[0], loc[1]), id) for loc, id in minima], reverse=True)
             #print(minima)
+            for dot, m, id in minima:
+                #cv2.circle(im, m, 2, colours[ci], 2)
+                corns[ci] = m
+                corns_id[ci] = id
+                #break
             for dot, m, id in minima:
                 #cv2.circle(im, m, 2, colours[ci], 2)
                 corns[ci] = m
@@ -128,7 +133,7 @@ def find_pieces(contours, im):
         print(corns_id)
         if PRINT_CORNERS:
             for corn in corns:
-                cv2.circle(im, corn, 2, (0, 0, 255), 2)
+                cv2.circle(im, corn, 2, (0, 0, 0), 2)
             m = c.mass_centre
             cv2.circle(im, (int(m[0]), int(m[1])), 2, (255, 0, 0), 2)
 
@@ -433,7 +438,8 @@ def main(imgname, threshold_value, threshold_mode):
             break
 
 if __name__ == '__main__':
-    main("input_shuffled.png", 35, 0)
+    #main("input_shuffled.png", 35, 0)
     #main("tartu_shuffled.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp2.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp3.png", 135, cv2.THRESH_BINARY_INV)
+    main("inp8.png", 135, cv2.THRESH_BINARY_INV)
