@@ -2,6 +2,8 @@ import cv2
 import numpy as np
 import time
 
+PRINT_CORNERS = False
+
 def dtw(a, b, ca, cb, aid, bid, contours, im):
     location_mult = 20
     #location_mult = 10
@@ -58,6 +60,9 @@ class Pieces:
 
         self.middle = []
 
+def std_dev(xs):
+    avg = sum(xs)/len(xs)
+    return (sum((x-avg)**2 for x in xs)/len(xs))**0.5
 
 def find_pieces(contours, im):
     pieces = []
@@ -66,6 +71,7 @@ def find_pieces(contours, im):
     corner_pieces = [-1, -1, -1, -1]
     # top, right, bot, left
     edge_pieces = [[], [], [], []]
+    std_devs = [[],[],[],[]]
     for cii, c in enumerate(contours):
         # find corners
         box = cv2.boundingRect(c.points)
@@ -75,7 +81,7 @@ def find_pieces(contours, im):
         corns_id = [-1, -1, -1, -1]
         for i, pix in enumerate(c.points):
             for ci in range(4):
-                d = abs(rect_corns[ci][0] - pix[0][0]) + abs(rect_corns[ci][1] - pix[0][1])
+                d = abs(rect_corns[ci][0] - pix[0][0])**2 + abs(rect_corns[ci][1] - pix[0][1])**2
                 if d < corns_d[ci]:
                     corns_d[ci] = d
                     corns[ci] = pix[0]
@@ -85,47 +91,48 @@ def find_pieces(contours, im):
         pieces.append(Piece(c.points, corns_id))
         c.corners = corns_id
         print(corns_id)
-        #for corn in corns:
-        #    cv2.circle(im, corn, 2, (0, 0, 255), 2)
+        if PRINT_CORNERS:
+            for corn in corns:
+                cv2.circle(im, corn, 2, (0, 0, 255), 2)
 
         # find starting piece (top left piece)
-        max_hor_delta = 0
+        vals = []
         for pix in get_edge(c.points, corns_id, "L"):
-            max_hor_delta = max(max_hor_delta, abs(pix[0][0] - corns[0][0]))
-        max_ver_delta = 0
+            vals.append(pix[0][0])
+        std_devs[3].append((std_dev(vals),cii))
+        vals = []
         for pix in get_edge(c.points, corns_id, "T"):
-            max_ver_delta = max(max_ver_delta, abs(pix[0][1] - corns[0][1]))
-        if max_hor_delta < 3 and max_ver_delta < 3:
-            corner_pieces[0] = cii
-        elif max_ver_delta < 3:
-            edge_pieces[0].append(cii)
-        elif max_hor_delta < 3:
-            edge_pieces[3].append(cii)
-
-        # find line end pieces
-        max_hor_delta = 0
+            vals.append(pix[0][1])
+        std_devs[0].append((std_dev(vals),cii))
+        vals = []
         for pix in get_edge(c.points, corns_id, "R"):
-            max_hor_delta = max(max_hor_delta, abs(pix[0][0] - corns[1][0]))
-        if max_hor_delta < 3:
-            if cii in edge_pieces[0]:
-                edge_pieces[0].remove(cii)
-                corner_pieces[1] = cii
-            else:
-                edge_pieces[1].append(cii)
-        # find last line pieces
-        max_ver_delta = 0
+            vals.append(pix[0][0])
+        std_devs[1].append((std_dev(vals),cii))
+        vals = []
         for pix in get_edge(c.points, corns_id, "B"):
-            max_ver_delta = max(max_ver_delta, abs(pix[0][1] - corns[2][1]))
-        if max_ver_delta < 3:
-            if cii in edge_pieces[1]:
-                corner_pieces[2] = cii
-                edge_pieces[1].remove(cii)
-            elif cii in edge_pieces[3]:
-                corner_pieces[3] = cii
-                edge_pieces[3].remove(cii)
-            else:
-                edge_pieces[2].append(cii)
-
+            vals.append(pix[0][1])
+        std_devs[2].append((std_dev(vals),cii))
+    
+    std_devs = [sorted(xs) for xs in std_devs]
+    for i in range(4):
+        max_dist = 0
+        max_dist_num = -1
+        last = std_devs[i][0][0]
+        for num, v in enumerate(std_devs[i]):
+            diff = v[0]-last
+            if diff>max_dist:
+                max_dist = diff
+                max_dist_num = num
+            last = v[0]
+        for id in range(max_dist_num):
+            edge_pieces[i].append(std_devs[i][id][1])
+    
+    for i in range(4):
+        for j in range(len(contours)):
+            if j in edge_pieces[i] and j in edge_pieces[(i-1+4)%4]:
+                edge_pieces[i].remove(j)
+                edge_pieces[(i-1+4)%4].remove(j)
+                corner_pieces[i] = j
     pieces_ob = Pieces()
     pieces_ob.top_left.append(corner_pieces[0])
     pieces_ob.top_right.append(corner_pieces[1])
@@ -360,14 +367,17 @@ def main(imgname, threshold_value, threshold_mode):
         #c.points = c.inner
     #corners, corners_coord, pieces_ob = find_pieces(contours, im)
 
+    print(f"Nr of contours: {len(contours)}, top: {len(pieces_ob.top)}, left: {len(pieces_ob.left)}, bot: {len(pieces_ob.bottom)}, right: {len(pieces_ob.right)}")
+    img = im.copy()
+    cv2.drawContours(img, [c.points for c in contours], -1, (0,255,0), 2)
+    cv2.imshow("1",img)
+    cv2.waitKey(0)
+    
     res = find_res(corners, contours, corners_coord, im, pieces_ob)
 
     # copy pieces to result image
     res_im = calc_res_img2(res, corners_coord, im, contours)
 
-    img = im.copy()
-    cv2.drawContours(img, [c.points for c in contours], -1, (0,255,0), 2)
-    cv2.imshow("1",img)
     cv2.imshow("2",res_im)
     while True:
         k = cv2.waitKey(0)
@@ -376,6 +386,6 @@ def main(imgname, threshold_value, threshold_mode):
 
 if __name__ == '__main__':
     #main("input_shuffled.png", 35, 0)
-    main("input_shuffled_small.png", 135, cv2.THRESH_BINARY_INV)
+    main("inp7.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp2.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp3.png", 135, cv2.THRESH_BINARY_INV)
