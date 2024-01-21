@@ -550,33 +550,36 @@ def find_inners(contours, im):
     contours2, hier = cv2.findContours(im_temp, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
     contours2 = [c for i,c in enumerate(contours2) if hier[0][i][2] == -1]
     
+    contours2 = [x[2] for x in sorted([(cv2.contourArea(c),i,c) for i,c in enumerate(contours2)])[-len(contours):]]
+    #cv2.drawContours(im, contours2, -1, (255,255,255), 1)
+    #cv2.imshow("1",im)
+    #cv2.waitKey(0)
+    
     for c1 in contours:
         box1 = cv2.boundingRect(c1.points)
         for i,c2 in enumerate(contours2):
             box2 = cv2.boundingRect(c2)
             if box1[0] <= box2[0] <= box2[0]+box2[2] <= box1[0]+box1[2] and box1[1] <= box2[1] <= box2[1]+box2[3] <= box1[1]+box1[3]:
                 c1.inner_full = c2
-                print(len(contours2))
-                print(c2.shape)
                 break
         contours2.pop(i)
-    
-    for j, c in enumerate(contours):
+        c1.inner_full_set = set(tuple(cc[0]) for cc in c1.inner_full)
+
+    for c in contours:
         c.inner = [-1 for _ in range(len(c.points))]
         for i,p in enumerate(c.points):
             best_p = -1
             best_d = 1e9
-            for pi in c.inner_full:
-                d = (p[0][0]-pi[0][0])**2+(p[0][1]-pi[0][1])**2
-                if d<best_d:
-                    best_d = d
-                    best_p = pi[0]
-            c.inner[i] = best_p
-        print(f"Done contour {j}")
-    
-    #cv2.drawContours(im, contours2, -1, (255,255,255), 1)
-    #cv2.imshow("1",im)
-    #cv2.waitKey(0)
+            q = [p[0]]
+            done = 0
+            while not done:
+                node = q.pop(0)
+                for dx, dy in [(1,0),(-1,0),(0,1),(0,-1)]:
+                    next = (node[0]+dx, node[1]+dy)
+                    if next in c.inner_full_set:
+                        c.inner[i] = next
+                        done = 1
+                    q.append(next)
 
 
 def main(imgname, threshold_value, threshold_mode):
