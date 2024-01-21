@@ -5,9 +5,10 @@ import matplotlib.pyplot as plt
 from scipy.signal import argrelextrema
 import json
 import random
+import imageio
 
 PRINT_CORNERS = True
-CALCULATE_DISTS = True
+CALCULATE_DISTS = False
 
 def dtw(a, b, ca, cb, aid, bid, contours, im):
     location_mult = 20
@@ -378,12 +379,42 @@ def find_res(corners, contours, corners_coord, im, pieces):
     return res
 
 
+def record_history(res, corners_coord, im, contours, history, offsets, output_filename):
+    imgs = []
+    for i, cur in enumerate(history):
+        #if i > 10:
+        #    break
+        res_im = np.zeros((430, 430, 3), dtype=np.uint8)
+        for y, line in enumerate(cur):
+            for x, id in enumerate(line):
+                if id == -1:
+                    continue
+                offset = offsets[y][x]
+                offset = (int(offset[0]), int(offset[1]))
+                middle = (corners_coord[id][0][0] + (corners_coord[id][2][0] - corners_coord[id][0][0]) // 2, corners_coord[id][0][1] + (corners_coord[id][2][1] - corners_coord[id][0][1]) // 2)
+                q = [middle]
+                seen = {middle}
+                #vals = set(contours[id].inner.values())
+                vals = set()
+                while q:
+                    node = q.pop()
+                    res_im[offset[1] + node[1] - corners_coord[id][0][1], offset[0] + node[0] - corners_coord[id][0][0]] = im[node[1], node[0]]
+                    for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+                        next = (node[0] + dx, node[1] + dy)
+                        if next not in contours[id].set and next not in vals and next not in seen:
+                            seen.add(next)
+                            q.append(next)
+        imgs.append(cv2.cvtColor(res_im, cv2.COLOR_BGR2RGB))
+    print([a.shape for a in imgs])
+    imageio.mimsave(output_filename, imgs, fps=3)
+
+
 def show_history(res, corners_coord, im, contours, history, offsets):
     i = 0
     show_inner = False
     while True:
         cur = history[i]
-        res_im = np.zeros((2000, 2000, 3), dtype=np.uint8)
+        res_im = np.zeros((430, 430, 3), dtype=np.uint8)
         for y, line in enumerate(cur):
             for x, id in enumerate(line):
                 if id == -1:
@@ -431,8 +462,6 @@ def show_history(res, corners_coord, im, contours, history, offsets):
             print(key)
             if key == 27:
                 return
-
-
 
 
 def calc_res_img2(res, corners_coord, im, contours):
@@ -600,6 +629,7 @@ def find_inners(contours, im):
                     break
 
 def main(imgname, threshold_value, threshold_mode):
+    start = time.time()
     im = cv2.imread(imgname)
     imgray = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(imgray, threshold_value, 255, threshold_mode)
@@ -616,13 +646,13 @@ def main(imgname, threshold_value, threshold_mode):
     print(f"Nr of contours: {len(contours)}, top: {len(pieces_ob.top)}, left: {len(pieces_ob.left)}, bot: {len(pieces_ob.bottom)}, right: {len(pieces_ob.right)}")
     cv2.drawContours(display_im, [c.points for c in contours], -1, (0,255,0), 1)
     cv2.imshow("1",display_im)
-    cv2.waitKey(0)
+    cv2.waitKey(100)
     
     if CALCULATE_DISTS:
-        start = time.time()
+        #start = time.time()
         dists = cache_dtws(corners, contours, corners_coord, im.astype(np.int16), pieces_ob)
-        taken = time.time() - start
-        print(f"Cacheing dtw took {round(taken, 2)} seconds")
+        #taken = time.time() - start
+        #print(f"Cacheing dtw took {round(taken, 2)} seconds")
         # 123.79 initially
         # 117.31 after doing colour comparison with numpy
         #  76.27 after skipping straight edges in dtw calculation
@@ -640,7 +670,10 @@ def main(imgname, threshold_value, threshold_mode):
 
     # copy pieces to result image
     res_im, offsets = calc_res_img2(res, corners_coord, im, contours)
-    show_history(res, corners_coord, im, contours, history, offsets)
+    taken = time.time() - start
+    print(f"In total solving took {round(taken, 2)} seconds")
+    #show_history(res, corners_coord, im, contours, history, offsets)
+    record_history(res, corners_coord, im, contours, history, offsets, "solving.gif")
 
     #cv2.imshow("2",res_im)
     #while True:
@@ -650,8 +683,12 @@ def main(imgname, threshold_value, threshold_mode):
 
 if __name__ == '__main__':
     #main("input_shuffled.png", 35, 0)
-    #main("tartu_shuffled.png", 135, cv2.THRESH_BINARY_INV)
+    main("tartu_shuffled.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp2.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp3.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp10.png", 135, cv2.THRESH_BINARY_INV)
-    main("input_shuffled_small.png", 135, cv2.THRESH_BINARY_INV)
+    #main("input_shuffled_small.png", 135, cv2.THRESH_BINARY_INV)
+
+    # Tartu puzzle
+    # CPU algorithm: 299.3 seconds
+    # Human (Kristjan): 342.5 seconds
