@@ -592,7 +592,7 @@ def main(imgname, threshold_value, threshold_mode):
     if CALCULATE_DISTS:
         dists = cache_dtws(corners, contours, corners_coord, im)
         file = open("cache.json", "w")
-        #file.write(json.dumps(dists))
+        file.write(json.dumps(dists))
         dists = Dists(dists)
     else:
         file = open("cache.json", "r")
