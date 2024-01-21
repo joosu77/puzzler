@@ -7,6 +7,7 @@ import json
 import random
 
 PRINT_CORNERS = True
+CALCULATE_DISTS = True
 
 def dtw(a, b, ca, cb, aid, bid, contours, im):
     location_mult = 20
@@ -587,10 +588,14 @@ def main(imgname, threshold_value, threshold_mode):
     cv2.imshow("1",display_im)
     cv2.waitKey(0)
     
-    #dists = cache_dtws(corners, contours, corners_coord, im)
-    file = open("cache.json", "r")
-    #file.write(json.dumps(dists))
-    dists = Dists(json.loads(file.read()))
+    if CALCULATE_DISTS:
+        dists = cache_dtws(corners, contours, corners_coord, im)
+        file = open("cache.json", "w")
+        #file.write(json.dumps(dists))
+        dists = Dists(dists)
+    else:
+        file = open("cache.json", "r")
+        dists = Dists(json.loads(file.read()))
     file.close()
     #exit()
 
