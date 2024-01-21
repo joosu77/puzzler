@@ -533,33 +533,40 @@ class Contour:
     def __len__(self):
         return len(self.points)
 
-    def find_inner(self):
-        self.inner = [-1 for _ in range(len(self.points))]
+def find_inners(contours, im):
+    im_temp = np.zeros(im.shape[:2], dtype=np.uint8)
+    cv2.drawContours(im_temp, [c.points for c in contours], -1, 255, 1)
+    im_temp = cv2.dilate(im_temp, np.ones((7,7),dtype=np.uint8))
+    contours2, hier = cv2.findContours(im_temp, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+    contours2 = [c for i,c in enumerate(contours2) if hier[0][i][2] == -1]
+    
+    for c1 in contours:
+        box1 = cv2.boundingRect(c1.points)
+        for i,c2 in enumerate(contours2):
+            box2 = cv2.boundingRect(c2)
+            if box1[0] <= box2[0] <= box2[0]+box2[2] <= box1[0]+box1[2] and box1[1] <= box2[1] <= box2[1]+box2[3] <= box1[1]+box1[3]:
+                c1.inner_full = c2
+                print(len(contours2))
+                print(c2.shape)
+                break
+        contours2.pop(i)
+    
+    for c in contours:
+        c.inner = [-1 for _ in range(len(c.points))]
+        for i,p in enumerate(c.points):
+            best_p = -1
+            best_d = 1e9
+            for pi in c.inner_full:
+                d = (p[0][0]-pi[0][0])**2+(p[0][1]-pi[0][1])**2
+                if d<best_d:
+                    best_d = d
+                    best_p = pi[0]
+            c.inner[i] = best_p
+    
+    #cv2.drawContours(im, contours2, -1, (255,255,255), 1)
+    #cv2.imshow("1",im)
+    #cv2.waitKey(0)
 
-        tl = self.points[self.corners[0]][0]
-        br = self.points[self.corners[2]][0]
-        middle = (tl[0] + (br[0] - tl[0]) // 2, tl[1] + (br[1] - tl[1]) // 2)
-
-        q = [middle]
-        seen = {middle}
-        while q:
-            node = q.pop()
-            for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
-                next = (node[0] + dx, node[1] + dy)
-                if next in self.set:
-                    self.inner[self.map[next]] = node
-                elif next not in seen:
-                    seen.add(next)
-                    q.append(next)
-        ctr = 0
-        while self.inner[ctr] == -1:
-            ctr+=1
-        while ctr:
-            ctr-=1
-            self.inner[ctr] = self.inner[ctr+1]
-        for i in range(len(self.points)):
-            if self.inner[i] == -1:
-                self.inner[i] = self.inner[i-1]
 
 def main(imgname, threshold_value, threshold_mode):
     im = cv2.imread(imgname)
@@ -572,7 +579,8 @@ def main(imgname, threshold_value, threshold_mode):
     corners, corners_coord, pieces_ob, display_im = find_pieces(contours, im)
 
     #dfs vol 2
-    [c.find_inner() for c in contours]
+    #[c.find_inner(im) for c in contours]
+    find_inners(contours, im)
 
     print(f"Nr of contours: {len(contours)}, top: {len(pieces_ob.top)}, left: {len(pieces_ob.left)}, bot: {len(pieces_ob.bottom)}, right: {len(pieces_ob.right)}")
     cv2.drawContours(display_im, [c.points for c in contours], -1, (0,255,0), 1)
@@ -601,8 +609,8 @@ def main(imgname, threshold_value, threshold_mode):
 
 if __name__ == '__main__':
     #main("input_shuffled.png", 35, 0)
-    main("tartu_shuffled.png", 135, cv2.THRESH_BINARY_INV)
+    #main("tartu_shuffled.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp2.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp3.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp10.png", 135, cv2.THRESH_BINARY_INV)
-    #main("input_shuffled_small.png", 135, cv2.THRESH_BINARY_INV)
+    main("input_shuffled_small.png", 135, cv2.THRESH_BINARY_INV)
