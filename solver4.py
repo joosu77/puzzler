@@ -4,7 +4,7 @@ import time
 import matplotlib.pyplot as plt
 from scipy.signal import argrelextrema
 
-PRINT_CORNERS = False
+PRINT_CORNERS = True
 
 def dtw(a, b, ca, cb, aid, bid, contours, im):
     location_mult = 20
@@ -17,15 +17,9 @@ def dtw(a, b, ca, cb, aid, bid, contours, im):
     dp = [[0 for _ in range(m)] for _ in range(n)]
     
     def dist(a, b):
-        ida = contours[aid].map[tuple(a)]
-        idb = contours[bid].map[tuple(b)]
-        while ida not in contours[aid].inner:
-            ida = (ida + 1) % len(contours[aid])
-        while idb not in contours[bid].inner:
-            idb = (idb + 1) % len(contours[bid])
-        pixcola = contours[aid].inner[ida]
-        pixcolb = contours[bid].inner[idb]
-        return location_mult * abs(a[0] - b[0] - ca[0] + cb[0]) + location_mult * abs(a[1] - b[1] - ca[1] + cb[1]) + abs(int(im[pixcola[1]][pixcola[0]][0]) - int(im[pixcolb[1]][pixcolb[0]][0])) + abs(int(im[pixcola[1]][pixcola[0]][1]) - int(im[pixcolb[1]][pixcolb[0]][1])) + abs(int(im[pixcola[1]][pixcola[0]][2]) - int(im[pixcolb[1]][pixcolb[0]][2]))
+        pixcola = contours[aid].inner[contours[aid].map[tuple(a)]]
+        pixcolb = contours[bid].inner[contours[bid].map[tuple(b)]]
+        return location_mult * abs(a[0] - b[0] - ca[0] + cb[0]) + location_mult * abs(a[1] - b[1] - ca[1] + cb[1]) + sum(abs(int(im[pixcola[1]][pixcola[0]][i]) - int(im[pixcolb[1]][pixcolb[0]][i])) for i in range(3))
     
     for i in range(1, n):
         dp[i][0] = dist(a[i][0], b[0][0]) + dp[i - 1][0]
@@ -75,6 +69,7 @@ def find_pieces(contours, im):
     # top, right, bot, left
     edge_pieces = [[], [], [], []]
     std_devs = [[],[],[],[]]
+    display_im = im.copy()
     for cii, c in enumerate(contours):
         # find corners
         box = cv2.boundingRect(c.points)
@@ -133,9 +128,9 @@ def find_pieces(contours, im):
         print(corns_id)
         if PRINT_CORNERS:
             for corn in corns:
-                cv2.circle(im, corn, 2, (0, 0, 0), 2)
+                cv2.circle(display_im, corn, 2, (0, 0, 0), 2)
             m = c.mass_centre
-            cv2.circle(im, (int(m[0]), int(m[1])), 2, (255, 0, 0), 2)
+            cv2.circle(display_im, (int(m[0]), int(m[1])), 2, (255, 0, 0), 2)
 
         # find starting piece (top left piece)
         vals = []
@@ -200,7 +195,24 @@ def find_pieces(contours, im):
         pieces_ob.middle.append(i)
     pieces_ob.data = pieces
         
-    return corners, corners_coord, pieces_ob
+    return corners, corners_coord, pieces_ob, display_im
+
+
+def cache_dtws(corners, contours, corners_coord, im):
+    # map: hor[id1][id2] means distance when id1 piece is to the left of id2
+    #      ver[id1][id2] means distance when id1 piece is up from id2
+    dists_hor = [[-1 for _ in range(len(contours))] for i in range(len(contours))]
+    dists_ver = [[-1 for _ in range(len(contours))] for i in range(len(contours))]
+    for id1 in range(len(contours)):
+        edges1 = [get_edge(contours[id1].points, corners[id1], "TRBL"[i])[::-1] for i in range(4)]
+        for id2 in range(id1+1,len(contours)):
+            edges2 = [get_edge(contours[id2].points, corners[id2], "TRBL"[i]) for i in range(4)]
+            dists_hor[id1][id2] = dtw(edges1[1],edges2[3],corners_coord[id1][1],corners_coord[id2][0],id1,id2,contours,im)
+            dists_hor[id2][id1] = dtw(edges1[3],edges2[1],corners_coord[id1][0],corners_coord[id2][1],id1,id2,contours,im)
+            dists_ver[id1][id2] = dtw(edges1[2],edges2[0],corners_coord[id1][3],corners_coord[id2][0],id1,id2,contours,im)
+            dists_ver[id2][id1] = dtw(edges1[0],edges2[2],corners_coord[id1][0],corners_coord[id2][3],id1,id2,contours,im)
+    return dists_hor,dists_ver
+
 
 def find_res(corners, contours, corners_coord, im, pieces):
     row_w = len(pieces.top) + 2
@@ -382,7 +394,7 @@ class Contour:
         return len(self.points)
 
     def find_inner(self):
-        self.inner = {}
+        self.inner = [-1 for _ in range(len(self.points))]
 
         tl = self.points[self.corners[0]][0]
         br = self.points[self.corners[2]][0]
@@ -399,6 +411,15 @@ class Contour:
                 elif next not in seen:
                     seen.add(next)
                     q.append(next)
+        ctr = 0
+        while self.inner[ctr] == -1:
+            ctr+=1
+        while ctr:
+            ctr-=1
+            self.inner[ctr] = self.inner[ctr+1]
+        for i in range(len(self.points)):
+            if self.inner[i] == -1:
+                self.inner[i] = self.inner[i-1]
 
 def main(imgname, threshold_value, threshold_mode):
     im = cv2.imread(imgname)
@@ -408,23 +429,17 @@ def main(imgname, threshold_value, threshold_mode):
     contours = find_contours(thresh)
 
     # finding corners
-    corners, corners_coord, pieces_ob = find_pieces(contours, im)
+    corners, corners_coord, pieces_ob, display_im = find_pieces(contours, im)
 
     #dfs vol 2
     [c.find_inner() for c in contours]
-    for c in contours:
-        #print(c.points)
-        #print(c.inner)
-        max_key = max(c.inner.keys())
-        #print()
-        #c.points = c.inner
-    #corners, corners_coord, pieces_ob = find_pieces(contours, im)
 
     print(f"Nr of contours: {len(contours)}, top: {len(pieces_ob.top)}, left: {len(pieces_ob.left)}, bot: {len(pieces_ob.bottom)}, right: {len(pieces_ob.right)}")
-    img = im.copy()
-    cv2.drawContours(img, [c.points for c in contours], -1, (0,255,0), 1)
-    cv2.imshow("1",img)
+    cv2.drawContours(display_im, [c.points for c in contours], -1, (0,255,0), 1)
+    cv2.imshow("1",display_im)
     cv2.waitKey(0)
+    
+    #dists = cache_dtws(corners, contours, corners_coord, im)
     
     res = find_res(corners, contours, corners_coord, im, pieces_ob)
 
@@ -442,4 +457,4 @@ if __name__ == '__main__':
     #main("tartu_shuffled.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp2.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp3.png", 135, cv2.THRESH_BINARY_INV)
-    main("inp8.png", 135, cv2.THRESH_BINARY_INV)
+    main("inp10.png", 135, cv2.THRESH_BINARY_INV)
