@@ -216,7 +216,7 @@ class Dists:
         self.ver = data[1]
 
 
-def cache_dtws(corners, contours, corners_coord, im):
+def cache_dtws(corners, contours, corners_coord, im, pieces_ob):
     # map: hor[id1][id2] means distance when id1 piece is to the left of id2
     #      ver[id1][id2] means distance when id1 piece is up from id2
     dists_hor = [[-1 for _ in range(len(contours))] for i in range(len(contours))]
@@ -225,10 +225,31 @@ def cache_dtws(corners, contours, corners_coord, im):
         edges1 = [get_edge(contours[id1].points, corners[id1], "TRBL"[i])[::-1] for i in range(4)]
         for id2 in range(id1+1,len(contours)):
             edges2 = [get_edge(contours[id2].points, corners[id2], "TRBL"[i]) for i in range(4)]
-            dists_hor[id1][id2] = dtw(edges1[1],edges2[3],corners_coord[id1][1],corners_coord[id2][0],id1,id2,contours,im)
-            dists_hor[id2][id1] = dtw(edges1[3],edges2[1],corners_coord[id1][0],corners_coord[id2][1],id1,id2,contours,im)
-            dists_ver[id1][id2] = dtw(edges1[2],edges2[0],corners_coord[id1][3],corners_coord[id2][0],id1,id2,contours,im)
-            dists_ver[id2][id1] = dtw(edges1[0],edges2[2],corners_coord[id1][0],corners_coord[id2][3],id1,id2,contours,im)
+
+            # id1 right, id2 left
+            if id1 in pieces_ob.right or id1 in pieces_ob.top_right or id1 in pieces_ob.bottom_right or id2 in pieces_ob.left or id2 in pieces_ob.bottom_left or id2 in pieces_ob.top_left:
+                dists_hor[id1][id2] = 9999999
+            else:
+                dists_hor[id1][id2] = dtw(edges1[1],edges2[3],corners_coord[id1][1],corners_coord[id2][0],id1,id2,contours,im)
+
+            # id1 left, id2 right
+            if id2 in pieces_ob.right or id2 in pieces_ob.top_right or id2 in pieces_ob.bottom_right or id1 in pieces_ob.left or id1 in pieces_ob.bottom_left or id1 in pieces_ob.top_left:
+                dists_hor[id2][id1] = 9999999
+            else:
+                dists_hor[id2][id1] = dtw(edges1[3],edges2[1],corners_coord[id1][0],corners_coord[id2][1],id1,id2,contours,im)
+
+            # id1 bottom, id2 top
+            if id1 in pieces_ob.bottom or id1 in pieces_ob.bottom_left or id1 in pieces_ob.bottom_right or id2 in pieces_ob.top or id2 in pieces_ob.top_left or id2 in pieces_ob.top_right:
+                dists_ver[id1][id2] = 9999999
+            else:
+                dists_ver[id1][id2] = dtw(edges1[2],edges2[0],corners_coord[id1][3],corners_coord[id2][0],id1,id2,contours,im)
+
+            # id1 top, id2 bottom
+            if id2 in pieces_ob.bottom or id2 in pieces_ob.bottom_left or id2 in pieces_ob.bottom_right or id1 in pieces_ob.top or id1 in pieces_ob.top_left or id1 in pieces_ob.top_right:
+                dists_ver[id2][id1] = 9999999
+            else:
+                dists_ver[id2][id1] = dtw(edges1[0],edges2[2],corners_coord[id1][0],corners_coord[id2][3],id1,id2,contours,im)
+
             print(f"Done {id1} vs {id2}")
     return dists_hor, dists_ver
 
@@ -603,11 +624,12 @@ def main(imgname, threshold_value, threshold_mode):
     
     if CALCULATE_DISTS:
         start = time.time()
-        dists = cache_dtws(corners, contours, corners_coord, im.astype(np.int16))
+        dists = cache_dtws(corners, contours, corners_coord, im.astype(np.int16), pieces_ob)
         taken = time.time() - start
         print(f"Cacheing dtw took {round(taken, 2)} seconds")
         # 123.79 initially
         # 117.31 after doing colour comparison with numpy
+        #  76.27 after skipping straight edges in dtw calculation
         file = open("cache.json", "w")
         file.write(json.dumps(dists))
         dists = Dists(dists)
