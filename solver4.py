@@ -573,6 +573,7 @@ def find_inners(contours, im):
     
     contours2 = [x[2] for x in sorted([(cv2.contourArea(c),i,c) for i,c in enumerate(contours2)])[-len(contours):]]
     #cv2.drawContours(im, contours2, -1, (255,255,255), 1)
+    #cv2.drawContours(im, [c.points for c in contours], -1, (255,255,255), 1)
     #cv2.imshow("1",im)
     #cv2.waitKey(0)
     
@@ -586,22 +587,17 @@ def find_inners(contours, im):
         contours2.pop(i)
         c1.inner_full_set = set(tuple(cc[0]) for cc in c1.inner_full)
 
+    dist_map = [x[1:] for x in sorted([(dx**2+dy**2,dx,dy) for dy in range(-7,8) for dx in range(-7,8)])]
     for c in contours:
         c.inner = [-1 for _ in range(len(c.points))]
         for i,p in enumerate(c.points):
             best_p = -1
             best_d = 1e9
-            q = [p[0]]
-            done = 0
-            while not done:
-                node = q.pop(0)
-                for dx, dy in [(1,0),(-1,0),(0,1),(0,-1)]:
-                    next = (node[0]+dx, node[1]+dy)
-                    if next in c.inner_full_set:
-                        c.inner[i] = next
-                        done = 1
-                    q.append(next)
-
+            for dx,dy in dist_map:
+                node = (p[0][0]+dx, p[0][1]+dy)
+                if node in c.inner_full_set:
+                    c.inner[i] = node
+                    break
 
 def main(imgname, threshold_value, threshold_mode):
     im = cv2.imread(imgname)
