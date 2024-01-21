@@ -3,6 +3,8 @@ import numpy as np
 import time
 import matplotlib.pyplot as plt
 from scipy.signal import argrelextrema
+import json
+import random
 
 PRINT_CORNERS = True
 
@@ -34,7 +36,7 @@ def dtw(a, b, ca, cb, aid, bid, contours, im):
                 dp[i][j] = d + dp[i - 1][j - 1]
             else:
                 dp[i][j] = d + dp[i][j - 1]
-    return dp[n - 1][m - 1]
+    return int(dp[n - 1][m - 1])
 
 
 class Piece:
@@ -198,6 +200,12 @@ def find_pieces(contours, im):
     return corners, corners_coord, pieces_ob, display_im
 
 
+class Dists:
+    def __init__(self, data):
+        self.hor = data[0]
+        self.ver = data[1]
+
+
 def cache_dtws(corners, contours, corners_coord, im):
     # map: hor[id1][id2] means distance when id1 piece is to the left of id2
     #      ver[id1][id2] means distance when id1 piece is up from id2
@@ -211,7 +219,82 @@ def cache_dtws(corners, contours, corners_coord, im):
             dists_hor[id2][id1] = dtw(edges1[3],edges2[1],corners_coord[id1][0],corners_coord[id2][1],id1,id2,contours,im)
             dists_ver[id1][id2] = dtw(edges1[2],edges2[0],corners_coord[id1][3],corners_coord[id2][0],id1,id2,contours,im)
             dists_ver[id2][id1] = dtw(edges1[0],edges2[2],corners_coord[id1][0],corners_coord[id2][3],id1,id2,contours,im)
-    return dists_hor,dists_ver
+            print(f"Done {id1} vs {id2}")
+    return dists_hor, dists_ver
+
+
+def find_res_with_dists(corners, contours, corners_coord, im, pieces, dists):
+    row_w = len(pieces.top) + 2
+    col_h = len(pieces.right) + 2
+    all_pieces = pieces.top_left + pieces.top_right + pieces.bottom_left + pieces.bottom_right + pieces.top + pieces.bottom + pieces.left + pieces.right + pieces.middle
+    res = [[-1 for _ in range(row_w)] for _ in range(col_h)]
+    
+    res[0][0] = pieces.top_left[0]
+    res[0][-1] = pieces.top_right[0]
+    res[-1][0] = pieces.bottom_left[0]
+    res[-1][-1] = pieces.bottom_right[0]
+    to_explore = set()  # Has tuples of form (y, x)
+    to_explore.add((0, 1))
+    to_explore.add((1, 0))
+    to_explore.add((0, row_w - 2))
+    to_explore.add((1, row_w - 1))
+    to_explore.add((col_h - 1, 1))
+    to_explore.add((col_h - 2, 0))
+    to_explore.add((col_h - 1, row_w - 2))
+    to_explore.add((col_h - 2, row_w - 1))
+    history = []
+    history.append([[a for a in row] for row in res])
+    while to_explore:
+        print(to_explore)
+        best_location = None
+        best_id = None
+        best_bag = None
+        best_error = 1e12
+        #print(f"res: {res}")
+        for y, x in to_explore:
+            if y == 0:
+                bag = pieces.top
+            elif y == col_h - 1:
+                bag = pieces.bottom
+            elif x == 0:
+                bag = pieces.left
+            elif x == row_w - 1:
+                bag = pieces.right
+            else:
+                bag = pieces.middle
+            #print(f"bag: {bag}")
+            for id in bag:
+                #print(f"id: {id}")
+                error = 0
+                error_term_amount = 0
+                if y > 0 and res[y - 1][x] != -1:
+                    error += dists.ver[res[y - 1][x]][id]
+                    error_term_amount += 1
+                if y < col_h - 1 and res[y + 1][x] != -1:
+                    error += dists.ver[id][res[y + 1][x]]
+                    error_term_amount += 1
+                if x > 0 and res[y][x - 1] != -1:
+                    error += dists.hor[res[y][x - 1]][id]
+                    error_term_amount += 1
+                if x < row_w - 1 and res[y][x + 1] != -1:
+                    error += dists.hor[id][res[y][x + 1]]
+                    error_term_amount += 1
+                error /= error_term_amount
+                if error < best_error:
+                    best_error = error
+                    best_location = (y, x)
+                    best_id = id
+                    best_bag = bag
+        y, x = best_location
+        res[y][x] = best_id
+        best_bag.remove(best_id)
+        to_explore.remove(best_location)
+        for dx, dy in [(0, 1), (0, -1), (-1, 0), (1, 0)]:
+            tx, ty = x + dx, y + dy
+            if tx >= 0 and ty >= 0 and tx < row_w and ty < col_h and res[ty][tx] == -1:
+                to_explore.add((ty, tx))
+        history.append([[a for a in row] for row in res])
+    return res, history
 
 
 def find_res(corners, contours, corners_coord, im, pieces):
@@ -264,6 +347,63 @@ def find_res(corners, contours, corners_coord, im, pieces):
     return res
 
 
+def show_history(res, corners_coord, im, contours, history, offsets):
+    i = 0
+    show_inner = False
+    while True:
+        cur = history[i]
+        res_im = np.zeros((2000, 2000, 3), dtype=np.uint8)
+        for y, line in enumerate(cur):
+            for x, id in enumerate(line):
+                if id == -1:
+                    continue
+                offset = offsets[y][x]
+                offset = (int(offset[0]), int(offset[1]))
+                middle = (corners_coord[id][0][0] + (corners_coord[id][2][0] - corners_coord[id][0][0]) // 2, corners_coord[id][0][1] + (corners_coord[id][2][1] - corners_coord[id][0][1]) // 2)
+                q = [middle]
+                seen = {middle}
+                #vals = set(contours[id].inner.values())
+                vals = set()
+                while q:
+                    node = q.pop()
+                    res_im[offset[1] + node[1] - corners_coord[id][0][1], offset[0] + node[0] - corners_coord[id][0][0]] = im[node[1], node[0]]
+                    for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+                        next = (node[0] + dx, node[1] + dy)
+                        if next not in contours[id].set and next not in vals and next not in seen:
+                            seen.add(next)
+                            q.append(next)
+        if show_inner:
+            for y, line in enumerate(cur):
+                for x, id in enumerate(line):
+                    if id == -1:
+                        continue
+                    offset = offsets[y][x]
+                    offset = (int(offset[0]), int(offset[1]))
+                    for a, b in contours[id].inner:
+                        res_im[offset[1] + b - corners_coord[id][0][1], offset[0] + a - corners_coord[id][0][0]] = (255, 255, 255)
+                        #res_im[a][b] = (255, 255, 255)
+                    #print(contours[id].inner)
+        cv2.imshow("Result", res_im)
+        while True:
+            key = cv2.waitKey(0)
+            if key == 109:
+                i += 1
+                i = min(i, len(history) - 1)
+                break
+            if key == 110:
+                i -= 1
+                i = max(i, 0)
+                break
+            if key == 105:
+                show_inner = not show_inner
+                break
+            print(key)
+            if key == 27:
+                return
+
+
+
+
 def calc_res_img2(res, corners_coord, im, contours):
     res_im = np.zeros((2000, 2000, 3), dtype=np.uint8)
     offsets = [[(10, 10) for x in range(len(res[y]))] for y in range(len(res))]
@@ -314,7 +454,7 @@ def calc_res_img2(res, corners_coord, im, contours):
                     if next not in contours[id].set and next not in vals and next not in seen:
                         seen.add(next)
                         q.append(next)
-    return res_im
+    return res_im, offsets
 
 def is_contained(box1, box2):
     xl1 = box1[0]
@@ -440,21 +580,29 @@ def main(imgname, threshold_value, threshold_mode):
     cv2.waitKey(0)
     
     #dists = cache_dtws(corners, contours, corners_coord, im)
-    
-    res = find_res(corners, contours, corners_coord, im, pieces_ob)
+    file = open("cache.json", "r")
+    #file.write(json.dumps(dists))
+    dists = Dists(json.loads(file.read()))
+    file.close()
+    #exit()
+
+    res, history = find_res_with_dists(corners, contours, corners_coord, im, pieces_ob, dists)
+    #res = find_res(corners, contours, corners_coord, im, pieces_ob)
 
     # copy pieces to result image
-    res_im = calc_res_img2(res, corners_coord, im, contours)
+    res_im, offsets = calc_res_img2(res, corners_coord, im, contours)
+    show_history(res, corners_coord, im, contours, history, offsets)
 
-    cv2.imshow("2",res_im)
-    while True:
-        k = cv2.waitKey(0)
-        if k == 27:
-            break
+    #cv2.imshow("2",res_im)
+    #while True:
+    #    k = cv2.waitKey(0)
+    #    if k == 27:
+    #        break
 
 if __name__ == '__main__':
     #main("input_shuffled.png", 35, 0)
-    #main("tartu_shuffled.png", 135, cv2.THRESH_BINARY_INV)
+    main("tartu_shuffled.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp2.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp3.png", 135, cv2.THRESH_BINARY_INV)
-    main("inp10.png", 135, cv2.THRESH_BINARY_INV)
+    #main("inp10.png", 135, cv2.THRESH_BINARY_INV)
+    #main("input_shuffled_small.png", 135, cv2.THRESH_BINARY_INV)
