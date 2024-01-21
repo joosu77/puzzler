@@ -1,78 +1,139 @@
+#import os; os.environ["NUMBA_ENABLE_CUDASIM"] = "1"#; os.environ["NUMBA_CUDA_DEBUGINFO"] = "1"
+
+from numba import cuda, jit
+import numba
 import cv2
 import numpy as np
 import time
-import matplotlib.pyplot as plt
-from scipy.signal import argrelextrema
 import json
 import random
 
 PRINT_CORNERS = True
 CALCULATE_DISTS = True
+A=256
+B=256
 
-@cuda.jit('void(uint8[:], uint8[:], uint8,uint8, int8, int8,int8,int8, uint8, uint8, uint8[:], uint8[:], int16[:,:],int16[:,:])')
+#@cuda.jit(device=True)
+@cuda.jit('void(int16[:,:,:], int16[:,:,:], int16,int16, int16, int16,int16,int16, int16, int16, int16[:,:], int16[:,:], int16[:,:,:],int16[:,:])', device=True)
 def dtw_cuda(a, b, n, m, cax, cay, cbx, cby, aid, bid, points, inner, im, dp):
+    
+    #location_mult = numba.int16(13)
     location_mult = 13
     for i in range(m):
         for j in range(n):
             dp[i][j] = 0
     cc0 = cbx-cax
     cc1 = cby-cay
-    ac = contours[aid]
-    bc = contours[bid]
     
+    '''
     def dist(a, b,id1,id2):
         pixcola = inner[id1]
         pixcolb = inner[id2]
         return location_mult * (abs(a[0] - b[0] + cc0) + abs(a[1] - b[1] + cc1)) + np.sum(np.absolute(im[pixcola[1]][pixcola[0]] - im[pixcolb[1]][pixcolb[0]]))
-    
+    '''
     for i in range(1, n):
-        dp[i][0] = dist(a[i][0], b[0][0]) + dp[i - 1][0]
+        pixcola = inner[i]
+        pixcolb = inner[0]
+        dist = a[i][0][0]
+        dist = dist - b[0][0][0]
+        dist = dist + cc0
+        dist = abs(dist)
+        dist = dist + abs(a[i][0][1] - b[0][0][1] + cc1)
+        dist = dist * location_mult
+        for j in range(3):
+            dist += abs(im[pixcola[1]][pixcola[0]][j] - im[pixcolb[1]][pixcolb[0]][j])
+        dp[i][0] = dist + dp[i - 1][0]
     for j in range(1, m):
-        dp[0][j] = dist(a[0][0], b[j][0]) + dp[0][j - 1]
+        pixcola = inner[0]
+        pixcolb = inner[j]
+        dist = location_mult * (abs(a[0][0][0] - b[j][0][0] + cc0) + abs(a[0][0][1] - b[j][0][1] + cc1))
+        for j in range(3):
+            dist += abs(im[pixcola[1]][pixcola[0]][j] - im[pixcolb[1]][pixcolb[0]][j])
+        dp[0][j] = dist + dp[0][j - 1]
     for i in range(1, n):
         for j in range(1, m):
-            d = dist(a[i][0], b[j][0])
+            pixcola = inner[i]
+            pixcolb = inner[j]
+            dist = location_mult * (abs(a[i][0][0] - b[j][0][0] + cc0) + abs(a[i][0][1] - b[j][0][1] + cc1))
+            for j in range(3):
+                dist += abs(im[pixcola[1]][pixcola[0]][j] - im[pixcolb[1]][pixcolb[0]][j])
+            d = dist
             if dp[i - 1][j] <= dp[i - 1][j - 1] and dp[i - 1][j] <= dp[i][j - 1]:
                 dp[i][j] = d + dp[i - 1][j]
             elif dp[i - 1][j - 1] <= dp[i][j - 1]:
                 dp[i][j] = d + dp[i - 1][j - 1]
             else:
                 dp[i][j] = d + dp[i][j - 1]
+    print(dp[n-1][m-1])
     
-@cuda.jit('void(in16[:,:], int16[:,:], int16[:],uint8[:],int16[:,:],uint8[:],int16[:],int16[:],int16[:,:],int16[:,:])')
-def cache_dtws_cuda(dists_hor, dists_ver, edges, lens, corners_coord, pieces, im):
+#@cuda.jit('void(in16[:,:], int16[:,:], int16[:],uint8[:],int16[:,:],uint8[:],int16[:],int16[:],int16[:,:],int16[:,:],uint8)')
+@cuda.jit
+def cache_dtws_cuda(dists_hor, dists_ver, edges, lens, corners_coord, pieces_ob, inner, points, im, dp,num):
     start = cuda.threadIdx.x
     step = gridX = cuda.gridDim.x * cuda.blockDim.x
     for id1 in range(start, num, step):
         for id2 in range(id1+1,num):
             if not(pieces_ob[id1] & 2 or pieces_ob[id2] & 8):
-                dtw(edges[id1][1],edges[id2][3],lens[id1][1],lens[id2][3],*corners_coord[id1][1],*corners_coord[id2][0],id1,id2,points,inner,im,dp)
+                dtw_cuda(edges[id1][1],edges[id2][3],lens[id1][1],lens[id2][3],corners_coord[id1][1][0],corners_coord[id1][1][1],corners_coord[id2][0][0],corners_coord[id2][0][1],id1,id2,points,inner,im,dp)
                 dists_hor[id2][id1] = dp[lens[id1][1]-1][lens[id2][3]-1]
             if not(pieces_ob[id2] & 2 or pieces_ob[id1] & 8):
-                dtw(edges[id1][3],edges[id2][1],lens[id1][3],lens[id2][1],*corners_coord[id1][0],*corners_coord[id2][1],id1,id2,points,inner,im,dp)
+                dtw_cuda(edges[id1][3],edges[id2][1],lens[id1][3],lens[id2][1],corners_coord[id1][0][0],corners_coord[id1][0][1],corners_coord[id2][1][0],corners_coord[id2][1][1],id1,id2,points,inner,im,dp)
                 dists_hor[id2][id1] = dp[lens[id1][3]-1][lens[id2][1]-1]
             if not(pieces_ob[id1] & 4 or pieces_ob[id2] & 1):
-                dtw(edges[id1][2],edges[id2][0],lens[id1][2],lens[id2][0],*corners_coord[id1][3],*corners_coord[id2][0],id1,id2,points,inner,im,dp)
+                dtw_cuda(edges[id1][2],edges[id2][0],lens[id1][2],lens[id2][0],corners_coord[id1][3][0],corners_coord[id1][3][1],corners_coord[id2][0][0],corners_coord[id2][0][1],id1,id2,points,inner,im,dp)
                 dists_ver[id2][id1] = dp[lens[id1][2]-1][lens[id2][0]-1]
             if not(pieces_ob[id2] & 4 or pieces_ob[id1] & 1):
-                dtw(edges[id1][0],edges[id2][2],lens[id1][0],lens[id2][2],*corners_coord[id1][0],*corners_coord[id2][3],id1,id2,points,inner,im,dp)
+                dtw_cuda(edges[id1][0],edges[id2][2],lens[id1][0],lens[id2][2],corners_coord[id1][0][0],corners_coord[id1][0][1],corners_coord[id2][3][0],corners_coord[id2][3][1],id1,id2,points,inner,im,dp)
+                dists_ver[id2][id1] = dp[lens[id1][0]-1][lens[id2][2]-1]
+                print(dists_ver[id2][id1])
+            
+#@cuda.jit('void(in16[:,:], int16[:,:], int16[:],uint8[:],int16[:,:],uint8[:],int16[:],int16[:],int16[:,:],int16[:,:],uint8)')
+#@cuda.jit
+def cache_dtws_cuda_cpu(dists_hor, dists_ver, edges, lens, corners_coord, pieces_ob, inner, points, im, dp,num):
+    start = 0#cuda.threadIdx.x
+    step = 1#gridX = cuda.gridDim.x * cuda.blockDim.x
+    for id1 in range(start, num, step):
+        for id2 in range(id1+1,num):
+            if not(pieces_ob[id1] & 2 or pieces_ob[id2] & 8):
+                for i,x in enumerate([edges[id1][1],edges[id2][3],lens[id1][1],lens[id2][3],corners_coord[id1][1][0],corners_coord[id1][1][1],corners_coord[id2][0][0],corners_coord[id2][0][1],id1,id2,points,inner,im,dp]):
+                    try:
+                        print(i,end=" ")
+                        print(x.shape,end=" ")
+                    except:
+                        pass
+                    try:
+                        print(x.dtype,"")
+                    except:
+                        pass
+                    print()
+                #dtw_cuda[A,B](edges[id1][1],edges[id2][3],lens[id1][1],lens[id2][3],corners_coord[id1][1][0],corners_coord[id1][1][1],corners_coord[id2][0][0],corners_coord[id2][0][1],id1,id2,points,inner,im,dp)
+                dists_hor[id2][id1] = dp[lens[id1][1]-1][lens[id2][3]-1]
+            if not(pieces_ob[id2] & 2 or pieces_ob[id1] & 8):
+                #dtw_cuda[A,B](edges[id1][3],edges[id2][1],lens[id1][3],lens[id2][1],*corners_coord[id1][0],*corners_coord[id2][1],id1,id2,points,inner,im,dp)
+                dists_hor[id2][id1] = dp[lens[id1][3]-1][lens[id2][1]-1]
+            if not(pieces_ob[id1] & 4 or pieces_ob[id2] & 1):
+                #dtw_cuda[A,B](edges[id1][2],edges[id2][0],lens[id1][2],lens[id2][0],*corners_coord[id1][3],*corners_coord[id2][0],id1,id2,points,inner,im,dp)
+                dists_ver[id2][id1] = dp[lens[id1][2]-1][lens[id2][0]-1]
+            if not(pieces_ob[id2] & 4 or pieces_ob[id1] & 1):
+                #dtw_cuda[A,B](edges[id1][0],edges[id2][2],lens[id1][0],lens[id2][2],*corners_coord[id1][0],*corners_coord[id2][3],id1,id2,points,inner,im,dp)
                 dists_ver[id2][id1] = dp[lens[id1][0]-1][lens[id2][2]-1]
 def cache_dtws(corners, contours, corners_coord, pieces_ob, im):
-    dists_hor = np.empty((len(contours),len(contours), dtype=np.uint8)
-    dists_ver = np.empty((len(contours),len(contours), dtype=np.uint8)
+    dists_hor = np.empty((len(contours),len(contours)), dtype=np.uint8)
+    dists_ver = np.empty((len(contours),len(contours)), dtype=np.uint8)
     edges = []
     lens = []
     maxlen = 0
     for id in range(len(contours)):
-        edges.append([get_edge(contours[id2].points, corners[id2], "TRBL"[i]) for i in range(4)])
+        edges.append([get_edge(contours[id].points, corners[id], "TRBL"[i]) for i in range(4)])
         lens.append([len(edges[-1][i]) for i in range(4)])
         maxlen = max(maxlen, max(lens[-1]))
     for id in range(len(contours)):
         for i in range(4):
-            edges.extend([0 for _ in range(maxlen-lens[id][i])])
+            edges[id][i] = np.append(edges[id][i], np.zeros((maxlen-lens[id][i],edges[id][i].shape[1],edges[id][i].shape[2])),axis=0)
+        
     edges = np.array(edges, dtype=np.int16)
     lens = np.array(lens, dtype=np.int16)
-    pieces_ob_l = np.zeros(len(contours), dtype=uint8)
+    pieces_ob_l = np.zeros(len(contours), dtype=np.uint8)
     for id in pieces_ob.top:
         pieces_ob_l[id] = 1
     for id in pieces_ob.right:
@@ -81,6 +142,9 @@ def cache_dtws(corners, contours, corners_coord, pieces_ob, im):
         pieces_ob_l[id] = 4
     for id in pieces_ob.left:
         pieces_ob_l[id] = 8
+    maxlen2 = max(len(c.points) for c in contours)
+    inner_np = np.array([np.append(c.inner,np.zeros((maxlen2-len(c.points),2))) for c in contours], dtype=np.int16)
+    points_np = np.array([np.append(c.points,np.zeros((maxlen2-len(c.points),1,2))) for c in contours], dtype=np.int16)
     pieces_ob_l[pieces_ob.top_left] = 0b1001
     pieces_ob_l[pieces_ob.top_right] = 0b0011
     pieces_ob_l[pieces_ob.bottom_right] = 0b0110
@@ -92,15 +156,16 @@ def cache_dtws(corners, contours, corners_coord, pieces_ob, im):
     d_im = cuda.to_device(im)
     d_corners = cuda.to_device(np.array(corners_coord, dtype=np.int16))
     d_pieces = cuda.to_device(pieces_ob_l)
-    d_inner = cuda.to_device(np.array(contours.inner, dtype=np.int16))
-    d_points = cuda.to_device(np.array(contours.points, dtype=np.int16))
-    d_dp = cuda.to_device(np.empty((maxlen,maxlen), dtype=int16))
-    cache_dtws_cuda[32,32](d_dists_hor, d_dists_ver, d_edges, d_lens, d_corners, d_pieces, d_inner, d_points, d_im, d_dp)
-    dists_hor = cuda.from_device(d_dists_hor)
-    dists_ver = cuda.from_device(d_dists_ver)
-    return dists_hor, dists_ver
+    d_inner = cuda.to_device(inner_np)
+    d_points = cuda.to_device(points_np)
+    d_dp = cuda.to_device(np.empty((maxlen,maxlen), dtype=np.int16))
+    cache_dtws_cuda[A,B](d_dists_hor, d_dists_ver, d_edges, d_lens, d_corners, d_pieces, d_inner, d_points, d_im, d_dp, len(contours))
+    #cache_dtws_cuda_cpu(d_dists_hor, d_dists_ver, d_edges, d_lens, d_corners, d_pieces, d_inner, d_points, d_im, d_dp, len(contours))
+    dists_hor = d_dists_hor.copy_to_host()
+    dists_ver = d_dists_ver.copy_to_host()
+    return dists_hor.tolist(), dists_ver.tolist()
 
-def dtw(a, b, ca, cb, aid, bid, contours, im):
+def dtw_old(a, b, ca, cb, aid, bid, contours, im):
     location_mult = 20
     #location_mult = 10
     location_mult = 13
@@ -308,7 +373,7 @@ class Dists:
 
 
 
-def cache_dtws(corners, contours, corners_coord, im):
+def cache_dtws_old(corners, contours, corners_coord, im):
     # map: hor[id1][id2] means distance when id1 piece is to the left of id2
     #      ver[id1][id2] means distance when id1 piece is up from id2
     dists_hor = [[-1 for _ in range(len(contours))] for i in range(len(contours))]
@@ -685,13 +750,13 @@ def main(imgname, threshold_value, threshold_mode):
     find_inners(contours, im)
 
     print(f"Nr of contours: {len(contours)}, top: {len(pieces_ob.top)}, left: {len(pieces_ob.left)}, bot: {len(pieces_ob.bottom)}, right: {len(pieces_ob.right)}")
-    cv2.drawContours(display_im, [c.points for c in contours], -1, (0,255,0), 1)
-    cv2.imshow("1",display_im)
-    cv2.waitKey(0)
+    #cv2.drawContours(display_im, [c.points for c in contours], -1, (0,255,0), 1)
+    #cv2.imshow("1",display_im)
+    #cv2.waitKey(0)
     
     if CALCULATE_DISTS:
         start = time.time()
-        dists = cache_dtws(corners, contours, corners_coord, im.astype(np.int16))
+        dists = cache_dtws(corners, contours, corners_coord, pieces_ob, im.astype(np.int16))
         taken = time.time() - start
         print(f"Cacheing dtw took {round(taken, 2)} seconds")
         # 123.79 initially
@@ -724,4 +789,4 @@ if __name__ == '__main__':
     #main("inp2.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp3.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp10.png", 135, cv2.THRESH_BINARY_INV)
-    main("input_shuffled_small.png", 135, cv2.THRESH_BINARY_INV)
+    main("tartu_shuffled.png", 135, cv2.THRESH_BINARY_INV)
