@@ -18,11 +18,18 @@ def dtw(a, b, ca, cb, aid, bid, contours, im):
     n = len(a)
     m = len(b)
     dp = [[0 for _ in range(m)] for _ in range(n)]
+
+    cc0 = cb[0] - ca[0]
+    cc1 = cb[1] - ca[1]
+    ac = contours[aid]
+    bc = contours[bid]
     
     def dist(a, b):
-        pixcola = contours[aid].inner[contours[aid].map[tuple(a)]]
-        pixcolb = contours[bid].inner[contours[bid].map[tuple(b)]]
-        return location_mult * abs(a[0] - b[0] - ca[0] + cb[0]) + location_mult * abs(a[1] - b[1] - ca[1] + cb[1]) + sum(abs(int(im[pixcola[1]][pixcola[0]][i]) - int(im[pixcolb[1]][pixcolb[0]][i])) for i in range(3))
+        pixcola = ac.inner[ac.map[tuple(a)]]
+        pixcolb = bc.inner[bc.map[tuple(b)]]
+        #colour_part = sum(abs(int(im[pixcola[1]][pixcola[0]][i]) - int(im[pixcolb[1]][pixcolb[0]][i])) for i in range(3))
+        #colour_part = np.sum(np.absolute(im[pixcola[1]][pixcola[0]] - im[pixcolb[1]][pixcolb[0]]))
+        return location_mult * (abs(a[0] - b[0] + cc0) + abs(a[1] - b[1] + cc1)) + np.sum(np.absolute(im[pixcola[1]][pixcola[0]] - im[pixcolb[1]][pixcolb[0]]))
     
     for i in range(1, n):
         dp[i][0] = dist(a[i][0], b[0][0]) + dp[i - 1][0]
@@ -108,11 +115,13 @@ def find_pieces(contours, im):
             minima = [(c.points[m[1]][0], m[1]) for m in minima]
             minima = sorted([(((loc[0] - c.mass_centre[0]) * dirs[ci][0] + (loc[1] - c.mass_centre[1]) * dirs[ci][1]) / abs(((loc[0] - c.mass_centre[0])**2 + (loc[1] - c.mass_centre[1])**2)**0.5), (loc[0], loc[1]), id) for loc, id in minima], reverse=True)
             #print(minima)
+            
             for dot, m, id in minima:
-                #cv2.circle(im, m, 2, colours[ci], 2)
+                #cv2.circle(display_im, m, 2, colours[ci], 2)
                 corns[ci] = m
                 corns_id[ci] = id
                 #break
+            #cv2.line(display_im, (int(c.mass_centre[0]), int(c.mass_centre[1])), (int(c.mass_centre[0] + 25 * dirs[ci][0]), int(c.mass_centre[1] + 25 * dirs[ci][1])), colours[ci], 1)
             for dot, m, id in minima:
                 #cv2.circle(im, m, 2, colours[ci], 2)
                 corns[ci] = m
@@ -590,7 +599,12 @@ def main(imgname, threshold_value, threshold_mode):
     cv2.waitKey(0)
     
     if CALCULATE_DISTS:
-        dists = cache_dtws(corners, contours, corners_coord, im)
+        start = time.time()
+        dists = cache_dtws(corners, contours, corners_coord, im.astype(np.int16))
+        taken = time.time() - start
+        print(f"Cacheing dtw took {round(taken, 2)} seconds")
+        # 123.79 initially
+        # 117.31 after doing colour comparison with numpy
         file = open("cache.json", "w")
         file.write(json.dumps(dists))
         dists = Dists(dists)
@@ -615,8 +629,8 @@ def main(imgname, threshold_value, threshold_mode):
 
 if __name__ == '__main__':
     #main("input_shuffled.png", 35, 0)
-    main("tartu_shuffled.png", 135, cv2.THRESH_BINARY_INV)
+    #main("tartu_shuffled.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp2.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp3.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp10.png", 135, cv2.THRESH_BINARY_INV)
-    #main("input_shuffled_small.png", 135, cv2.THRESH_BINARY_INV)
+    main("input_shuffled_small.png", 135, cv2.THRESH_BINARY_INV)
