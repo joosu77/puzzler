@@ -552,7 +552,7 @@ def find_inners(contours, im):
                 break
         contours2.pop(i)
     
-    for c in contours:
+    for j, c in enumerate(contours):
         c.inner = [-1 for _ in range(len(c.points))]
         for i,p in enumerate(c.points):
             best_p = -1
@@ -563,6 +563,7 @@ def find_inners(contours, im):
                     best_d = d
                     best_p = pi[0]
             c.inner[i] = best_p
+        print(f"Done contour {j}")
     
     #cv2.drawContours(im, contours2, -1, (255,255,255), 1)
     #cv2.imshow("1",im)
@@ -614,8 +615,8 @@ def main(imgname, threshold_value, threshold_mode):
 
 if __name__ == '__main__':
     #main("input_shuffled.png", 35, 0)
-    #main("tartu_shuffled.png", 135, cv2.THRESH_BINARY_INV)
+    main("tartu_shuffled.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp2.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp3.png", 135, cv2.THRESH_BINARY_INV)
     #main("inp10.png", 135, cv2.THRESH_BINARY_INV)
-    main("input_shuffled_small.png", 135, cv2.THRESH_BINARY_INV)
+    #main("input_shuffled_small.png", 135, cv2.THRESH_BINARY_INV)
