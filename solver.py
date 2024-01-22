@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-
+ 
 def dtw(a,b,ca,cb, check_deltas=True):
     best_res = 1e9
     best_delta = None

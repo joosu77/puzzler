@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from scipy.signal import argrelextrema
 import json
 import random
-import imageio
+#import imageio
 
 PRINT_CORNERS = True
 CALCULATE_DISTS = False
@@ -672,8 +672,8 @@ def main(imgname, threshold_value, threshold_mode):
     res_im, offsets = calc_res_img2(res, corners_coord, im, contours)
     taken = time.time() - start
     print(f"In total solving took {round(taken, 2)} seconds")
-    #show_history(res, corners_coord, im, contours, history, offsets)
-    record_history(res, corners_coord, im, contours, history, offsets, "solving.gif")
+    show_history(res, corners_coord, im, contours, history, offsets)
+    #record_history(res, corners_coord, im, contours, history, offsets, "solving.gif")
 
     #cv2.imshow("2",res_im)
     #while True:
